@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion'
 import { Activity, CheckCircle2, Users, BarChart3, ArrowRight, Sparkles } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useUser } from '@clerk/react'
+import { useEffect } from 'react'
 
 const features = [
   {
@@ -30,6 +31,11 @@ const steps = [
 
 export default function LandingPage() {
   const { isSignedIn } = useUser()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (isSignedIn) navigate('/app', { replace: true })
+  }, [isSignedIn, navigate])
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans overflow-x-hidden">

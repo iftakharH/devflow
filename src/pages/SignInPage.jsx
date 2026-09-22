@@ -1,9 +1,16 @@
-import { SignIn } from '@clerk/react'
+import { SignIn, useUser } from '@clerk/react'
 import { motion } from 'framer-motion'
 import { Activity } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 
 export default function SignInPage() {
+  const { isSignedIn } = useUser()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (isSignedIn) navigate('/app', { replace: true })
+  }, [isSignedIn, navigate])
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans flex items-center justify-center p-4">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -30,7 +37,6 @@ export default function SignInPage() {
           </div>
 
           <SignIn
-            afterSignInUrl="/app"
             appearance={{
               elements: {
                 rootBox: 'mx-auto',

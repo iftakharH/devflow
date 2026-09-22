@@ -178,6 +178,7 @@ function AppContent() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
   const [activeView, setActiveView] = useState('tasks') // tasks | dashboard | journal | shared
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
 
   const inputRef = useRef(null)
   const searchRef = useRef(null)
@@ -556,17 +557,42 @@ function AppContent() {
                 <kbd className="hidden sm:inline text-[10px] bg-zinc-800/80 px-1.5 py-0.5 rounded-md border border-zinc-700">⌘K</kbd>
               </button>
               {user && (
-                <div className="flex items-center gap-2 ml-2">
-                  {user.imageUrl && (
-                    <img src={user.imageUrl} alt="" className="w-7 h-7 rounded-full border border-zinc-800" />
-                  )}
+                <div className="relative ml-2">
                   <button
-                    onClick={() => clerk.signOut({ redirectUrl: '/' })}
-                    className="p-1.5 rounded-xl text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/60 transition-all"
-                    title="Sign out"
+                    onClick={() => setShowProfileMenu(v => !v)}
+                    className="flex items-center gap-2 p-1 rounded-xl hover:bg-zinc-800/60 transition-all"
                   >
-                    <LogOut size={14} />
+                    {user.imageUrl && (
+                      <img src={user.imageUrl} alt="" className="w-7 h-7 rounded-full border border-zinc-800" />
+                    )}
                   </button>
+                  {showProfileMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                        className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                      >
+                        <div className="px-4 py-3 border-b border-zinc-800">
+                          {user.fullName && (
+                            <p className="text-sm font-medium text-white">{user.fullName}</p>
+                          )}
+                          {user.primaryEmailAddress?.emailAddress && (
+                            <p className="text-xs text-zinc-500 truncate">{user.primaryEmailAddress.emailAddress}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => { setShowProfileMenu(false); clerk.signOut({ redirectUrl: '/' }) }}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-all"
+                        >
+                          <LogOut size={14} />
+                          Sign out
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
