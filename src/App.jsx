@@ -150,11 +150,12 @@ function AppContent() {
   // ─── Sync Clerk user to Convex on mount ────────────────
   useEffect(() => {
     if (user) {
-      syncUser().then(() => seedProjects())
+      syncUser().then(() => seedProjects()).catch(console.error)
     }
   }, [user, syncUser, seedProjects])
 
   // ─── Local state ───────────────────────────────────────
+  const dataLoading = convexTasks === undefined || convexProjects === undefined
   const tasks = useMemo(() => convexTasks ?? [], [convexTasks])
   const projects = useMemo(() => convexProjects ?? [], [convexProjects])
 
@@ -487,7 +488,7 @@ function AppContent() {
   }, [detailTaskId, startPomodoro, clerk])
 
   // ─── Loading state ─────────────────────────────────────
-  if (convexTasks === undefined || convexProjects === undefined) {
+  if (dataLoading) {
     return (
       <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
         <motion.div

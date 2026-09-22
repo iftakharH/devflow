@@ -85,7 +85,7 @@ export const update = mutation({
 
     if (updates.done !== undefined) {
       patchData.done = updates.done;
-      patchData.completedAt = updates.done ? Date.now() : null;
+      patchData.completedAt = updates.done ? Date.now() : undefined;
 
       await ctx.db.insert("activityLog", {
         userId: identity.subject,
