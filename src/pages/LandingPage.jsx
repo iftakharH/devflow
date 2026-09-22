@@ -37,18 +37,6 @@ export default function LandingPage() {
     if (isLoaded && isSignedIn) navigate('/app', { replace: true })
   }, [isLoaded, isSignedIn, navigate])
 
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)]">
-            <Activity size={18} className="text-zinc-300 animate-pulse" strokeWidth={1.5} />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans overflow-x-hidden">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">

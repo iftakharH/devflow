@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo, Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion, LayoutGroup } from 'framer-motion'
 import { useQuery, useMutation } from 'convex/react'
@@ -1853,13 +1853,48 @@ function AddTagInline({ currentTags, onAdd }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ERROR BOUNDARY
+// ═══════════════════════════════════════════════════════════════════
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() { return { hasError: true } }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center p-6">
+          <div className="max-w-md text-center">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center">
+              <AlertCircle size={24} className="text-red-400" />
+            </div>
+            <h2 className="text-lg font-medium mb-2">Something went wrong</h2>
+            <p className="text-sm text-zinc-500 mb-6">Try refreshing the page. If the problem persists, clear your browser cache.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 transition-colors"
+            >
+              Refresh page
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ROOT APP WITH ROUTING
 // ═══════════════════════════════════════════════════════════════════
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/sign-in/*" element={<SignInPage />} />
         <Route path="/sign-up/*" element={<SignUpPage />} />
@@ -1886,5 +1921,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   )
 }
