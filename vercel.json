@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/__clerk/:path(.*)",
+      "destination": "https://lasting-boar-1343.clerk.accounts.dev/:path"
+    },
+    {
       "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }

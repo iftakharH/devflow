@@ -4,13 +4,29 @@ import { Activity } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
 
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)]">
+          <Activity size={18} className="text-zinc-300 animate-pulse" strokeWidth={1.5} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SignUpPage() {
-  const { isSignedIn } = useUser()
+  const { isLoaded, isSignedIn } = useUser()
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (isSignedIn) navigate('/app', { replace: true })
-  }, [isSignedIn, navigate])
+    if (isLoaded && isSignedIn) navigate('/app', { replace: true })
+  }, [isLoaded, isSignedIn, navigate])
+
+  if (!isLoaded) return <LoadingSpinner />
+  if (isSignedIn) return <LoadingSpinner />
+
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans flex items-center justify-center p-4">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -37,6 +53,8 @@ export default function SignUpPage() {
           </div>
 
           <SignUp
+            routing="path"
+            path="/sign-up"
             appearance={{
               elements: {
                 rootBox: 'mx-auto',
