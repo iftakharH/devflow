@@ -480,7 +480,7 @@ function AppContent() {
       case 7: startPomodoro(detailTaskId || null); break
       case 8: setShowAddProject(true); break
       case 9: setShowExportModal(true); break
-      case 10: clerk.signOut(); break
+      case 10: clerk.signOut({ redirectUrl: '/' }); break
       default: break
     }
   }, [detailTaskId, startPomodoro, clerk])
@@ -561,7 +561,7 @@ function AppContent() {
                     <img src={user.imageUrl} alt="" className="w-7 h-7 rounded-full border border-zinc-800" />
                   )}
                   <button
-                    onClick={() => clerk.signOut()}
+                    onClick={() => clerk.signOut({ redirectUrl: '/' })}
                     className="p-1.5 rounded-xl text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/60 transition-all"
                     title="Sign out"
                   >

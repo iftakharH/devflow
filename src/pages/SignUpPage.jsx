@@ -30,6 +30,7 @@ export default function SignUpPage() {
           </div>
 
           <SignUp
+            afterSignUpUrl="/app"
             appearance={{
               elements: {
                 rootBox: 'mx-auto',

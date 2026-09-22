@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { Activity, CheckCircle2, Users, BarChart3, ArrowRight, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useUser } from '@clerk/react'
 
 const features = [
   {
@@ -28,6 +29,8 @@ const steps = [
 ]
 
 export default function LandingPage() {
+  const { isSignedIn } = useUser()
+
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans overflow-x-hidden">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -44,18 +47,29 @@ export default function LandingPage() {
           <span className="text-lg font-medium tracking-tight">DevFlow</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            to="/sign-in"
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
-          >
-            Sign in
-          </Link>
-          <Link
-            to="/sign-up"
-            className="px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-colors"
-          >
-            Get started
-          </Link>
+          {isSignedIn ? (
+            <Link
+              to="/app"
+              className="px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-colors"
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/sign-in"
+                className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+              >
+                Sign in
+              </Link>
+              <Link
+                to="/sign-up"
+                className="px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-colors"
+              >
+                Get started
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
@@ -83,13 +97,23 @@ export default function LandingPage() {
             </p>
 
             <div className="flex items-center justify-center gap-4">
-              <Link
-                to="/sign-up"
-                className="group flex items-center gap-2 px-6 py-3 rounded-2xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_60px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-all"
-              >
-                Start for free
-                <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
-              </Link>
+              {isSignedIn ? (
+                <Link
+                  to="/app"
+                  className="group flex items-center gap-2 px-6 py-3 rounded-2xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_60px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-all"
+                >
+                  Go to Dashboard
+                  <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              ) : (
+                <Link
+                  to="/sign-up"
+                  className="group flex items-center gap-2 px-6 py-3 rounded-2xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_60px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-all"
+                >
+                  Start for free
+                  <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              )}
               <a
                 href="#features"
                 className="px-6 py-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 text-sm text-zinc-400 hover:text-white hover:border-zinc-700 transition-all backdrop-blur-sm"
@@ -193,10 +217,10 @@ export default function LandingPage() {
             Join developers who use DevFlow as their daily driver. Free to start, no credit card required.
           </p>
           <Link
-            to="/sign-up"
+            to={isSignedIn ? "/app" : "/sign-up"}
             className="inline-flex items-center gap-2 px-8 py-3 rounded-2xl bg-white text-zinc-950 text-sm font-semibold shadow-[0_0_60px_-12px_rgba(255,255,255,0.55)] hover:bg-zinc-200 transition-all"
           >
-            Get started for free
+            {isSignedIn ? 'Go to Dashboard' : 'Get started for free'}
             <ArrowRight size={16} />
           </Link>
         </motion.div>
