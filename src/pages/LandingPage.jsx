@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Activity, CheckCircle2, Users, BarChart3, ArrowRight, Sparkles } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useUser } from '@clerk/react'
 
 const features = [
@@ -29,7 +29,24 @@ const steps = [
 ]
 
 export default function LandingPage() {
-  const { isSignedIn } = useUser()
+  const { isLoaded, isSignedIn } = useUser()
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)] animate-pulse">
+            <Activity size={18} className="text-zinc-300" strokeWidth={1.5} />
+          </div>
+          <p className="text-sm text-zinc-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSignedIn) {
+    return <Navigate to="/app" replace />
+  }
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans overflow-x-hidden">

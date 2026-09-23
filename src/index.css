@@ -46,8 +46,17 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline: 2px solid rgba(255, 255, 255, 0.35);
   outline-offset: 2px;
+  border-radius: inherit;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px #09090b,
+    0 0 0 4px rgba(255, 255, 255, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {

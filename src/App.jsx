@@ -1201,7 +1201,6 @@ function AppContent() {
                 onSubmit={(e) => { e.preventDefault(); addTask() }}
                 className="relative group"
               >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-white/[0.04] to-transparent rounded-3xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-500" />
                 <div className="relative flex items-center bg-zinc-900/60 border border-zinc-800 rounded-3xl backdrop-blur-sm overflow-hidden group-focus-within:border-zinc-700 transition-colors">
                   <Plus size={16} className="ml-4 text-zinc-400 flex-shrink-0 group-focus-within:text-zinc-400 transition-colors" />
                   <input
