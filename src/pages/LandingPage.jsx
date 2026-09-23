@@ -81,17 +81,17 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 250, damping: 26 }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-500 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-400 mb-8">
               <Sparkles size={12} className="text-amber-400" />
               Built for developers, by developers
             </div>
 
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.1] mb-6">
               Task management<br />
-              <span className="text-zinc-500">that actually works.</span>
+              <span className="text-zinc-400">that actually works.</span>
             </h1>
 
-            <p className="text-lg sm:text-xl text-zinc-500 max-w-2xl mx-auto mb-10 leading-relaxed">
+            <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
               DevFlow is a daily driver for developers who want to ship more and manage less.
               Natural language input, real-time sync, analytics, and collaboration — all in one beautiful app.
             </p>
@@ -127,7 +127,7 @@ export default function LandingPage() {
 
       {/* Features */}
       <section id="features" className="relative z-10 px-6 sm:px-12 py-20">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -135,10 +135,10 @@ export default function LandingPage() {
             transition={{ type: 'spring', stiffness: 250, damping: 26 }}
             className="text-center mb-16"
           >
-            <p className="text-xs text-zinc-600 uppercase tracking-[0.3em] mb-3">Features</p>
+            <p className="text-xs text-zinc-400 uppercase tracking-[0.3em] mb-3">Features</p>
             <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">
               Everything you need,<br />
-              <span className="text-zinc-500">nothing you don&apos;t.</span>
+              <span className="text-zinc-400">nothing you don&apos;t.</span>
             </h2>
           </motion.div>
 
@@ -156,7 +156,7 @@ export default function LandingPage() {
                   <f.icon size={18} className="text-zinc-400" strokeWidth={1.5} />
                 </div>
                 <h3 className="text-base font-medium text-white mb-2">{f.title}</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed">{f.description}</p>
+                <p className="text-sm text-zinc-400 leading-relaxed">{f.description}</p>
               </motion.div>
             ))}
           </div>
@@ -165,7 +165,7 @@ export default function LandingPage() {
 
       {/* How it works */}
       <section className="relative z-10 px-6 sm:px-12 py-20">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -173,10 +173,10 @@ export default function LandingPage() {
             transition={{ type: 'spring', stiffness: 250, damping: 26 }}
             className="text-center mb-16"
           >
-            <p className="text-xs text-zinc-600 uppercase tracking-[0.3em] mb-3">How it works</p>
+            <p className="text-xs text-zinc-400 uppercase tracking-[0.3em] mb-3">How it works</p>
             <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">
               Four steps to<br />
-              <span className="text-zinc-500">productive flow.</span>
+              <span className="text-zinc-400">productive flow.</span>
             </h2>
           </motion.div>
 
@@ -193,7 +193,7 @@ export default function LandingPage() {
                 <span className="text-3xl font-light text-zinc-800">{s.step}</span>
                 <div>
                   <h3 className="text-base font-medium text-white mb-1">{s.title}</h3>
-                  <p className="text-sm text-zinc-500 leading-relaxed">{s.desc}</p>
+                  <p className="text-sm text-zinc-400 leading-relaxed">{s.desc}</p>
                 </div>
               </motion.div>
             ))}
@@ -208,12 +208,12 @@ export default function LandingPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ type: 'spring', stiffness: 250, damping: 26 }}
-          className="max-w-3xl mx-auto text-center"
+          className="max-w-3xl md:max-w-5xl lg:max-w-6xl mx-auto text-center"
         >
           <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-6">
             Ready to ship more?
           </h2>
-          <p className="text-zinc-500 mb-8 max-w-lg mx-auto">
+          <p className="text-zinc-400 mb-8 max-w-lg mx-auto">
             Join developers who use DevFlow as their daily driver. Free to start, no credit card required.
           </p>
           <Link
@@ -230,8 +230,8 @@ export default function LandingPage() {
       <footer className="relative z-10 px-6 sm:px-12 py-8 border-t border-zinc-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Activity size={14} className="text-zinc-700" />
-            <span className="text-xs text-zinc-700">DevFlow</span>
+            <Activity size={14} className="text-zinc-400" />
+            <span className="text-xs text-zinc-400">DevFlow</span>
           </div>
           <span className="text-[10px] text-zinc-800 uppercase tracking-wider">v2</span>
         </div>

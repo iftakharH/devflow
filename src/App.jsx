@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo, Component } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo, Component, Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion, LayoutGroup } from 'framer-motion'
 import { useQuery, useMutation } from 'convex/react'
@@ -8,12 +8,12 @@ import {
   Activity, Plus, Search, Trash2, Pencil, Check, Calendar,
   ListChecks, FileText, X, Download, Upload, AlertCircle, Filter,
   Folder, Command, RotateCcw, CheckCircle2, Hash, Flame, Target, Copy,
-  LogOut, BookOpen, BarChart3
+  LogOut, BookOpen, BarChart3, ChevronLeft, ChevronRight, ChevronDown
 } from 'lucide-react'
 
-import LandingPage from './pages/LandingPage'
-import SignInPage from './pages/SignInPage'
-import SignUpPage from './pages/SignUpPage'
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const SignInPage = lazy(() => import('./pages/SignInPage'))
+const SignUpPage = lazy(() => import('./pages/SignUpPage'))
 
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -37,23 +37,39 @@ const PRIORITY_CONFIG = {
 let _idN = 0
 const uid = (prefix = 'id') => `${prefix}-${Date.now()}-${++_idN}-${Math.random().toString(36).slice(2, 7)}`
 
-const fmtDate = (iso) => {
+const toLocalDateString = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const fmtDate = (iso, time) => {
   if (!iso) return ''
   const d = new Date(iso + 'T00:00:00')
   const now = new Date(); now.setHours(0,0,0,0)
   const diff = Math.round((d - now) / 86400000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tomorrow'
-  if (diff === -1) return 'Yesterday'
-  if (diff > 1 && diff <= 6) return d.toLocaleDateString('en-US', { weekday: 'short' })
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  let base
+  if (diff === 0) base = 'Today'
+  else if (diff === 1) base = 'Tomorrow'
+  else if (diff === -1) base = 'Yesterday'
+  else if (diff > 1 && diff <= 6) base = d.toLocaleDateString('en-US', { weekday: 'short' })
+  else base = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return time ? `${base} ${time}` : base
 }
 
-const isOverdue = (iso) => {
+const isOverdue = (iso, time) => {
   if (!iso) return false
   const d = new Date(iso + 'T00:00:00'); d.setHours(0,0,0,0)
   const now = new Date(); now.setHours(0,0,0,0)
-  return d < now
+  if (d < now) return true
+  if (d > now) return false
+  if (time) {
+    const [h, m] = time.split(':').map(Number)
+    const due = new Date(); due.setHours(h, m, 0, 0)
+    return due < new Date()
+  }
+  return false
 }
 
 const parseNaturalDate = (text) => {
@@ -61,20 +77,20 @@ const parseNaturalDate = (text) => {
   const now = new Date(); now.setHours(0,0,0,0)
   const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
 
-  if (t.includes('today')) return now.toISOString().split('T')[0]
-  if (t.includes('tomorrow')) { const d = new Date(now); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0] }
+  if (t.includes('today')) return toLocalDateString(now)
+  if (t.includes('tomorrow')) { const d = new Date(now); d.setDate(d.getDate()+1); return toLocalDateString(d) }
 
   for (let i = 0; i < 7; i++) {
     if (t.includes(dayNames[i])) {
       const d = new Date(now)
       const diff = (i - d.getDay() + 7) % 7 || 7
       d.setDate(d.getDate() + diff)
-      return d.toISOString().split('T')[0]
+      return toLocalDateString(d)
     }
   }
 
-  if (t.includes('next week')) { const d = new Date(now); d.setDate(d.getDate()+7); return d.toISOString().split('T')[0] }
-  if (t.includes('next month')) { const d = new Date(now); d.setMonth(d.getMonth()+1); return d.toISOString().split('T')[0] }
+  if (t.includes('next week')) { const d = new Date(now); d.setDate(d.getDate()+7); return toLocalDateString(d) }
+  if (t.includes('next month')) { const d = new Date(now); d.setMonth(d.getMonth()+1); return toLocalDateString(d) }
 
   const monthMatch = t.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{1,2})/)
   if (monthMatch) {
@@ -84,7 +100,7 @@ const parseNaturalDate = (text) => {
     if (mi >= 0 && day > 0 && day <= 31) {
       const d = new Date(now.getFullYear(), mi, day)
       if (d < now) d.setFullYear(d.getFullYear() + 1)
-      return d.toISOString().split('T')[0]
+      return toLocalDateString(d)
     }
   }
 
@@ -95,7 +111,7 @@ const parseNaturalDate = (text) => {
     if (m >= 0 && m < 12 && d2 > 0 && d2 <= 31) {
       const d = new Date(now.getFullYear(), m, d2)
       if (d < now) d.setFullYear(d.getFullYear() + 1)
-      return d.toISOString().split('T')[0]
+      return toLocalDateString(d)
     }
   }
 
@@ -107,7 +123,7 @@ const parsePriority = (text) => {
   if (/\bhigh\b/.test(t)) return 'high'
   if (/\bmed\b|\bmedium\b/.test(t)) return 'medium'
   if (/\blow\b/.test(t)) return 'low'
-  return 'medium'
+  return null
 }
 
 const parseTags = (text) => {
@@ -125,6 +141,203 @@ const stripParsed = (text) => {
     .replace(/#([\w-]+)/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PICKER COMPONENTS (custom, zero deps)
+// ═══════════════════════════════════════════════════════════════════
+
+function useClickOutside(ref, open, onClose) {
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open, onClose, ref])
+}
+
+function PriorityDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useClickOutside(ref, open, () => setOpen(false))
+  const cfg = PRIORITY_CONFIG[value] || PRIORITY_CONFIG.medium
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Priority: ${cfg.label}. Change priority`}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs border transition-all ${cfg.bg} ${cfg.border} ${cfg.text}`}
+      >
+        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cfg.color }} />
+        {cfg.label}
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div role="listbox" aria-label="Priority options" className="absolute left-0 z-40 mt-1 w-32 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden">
+          {Object.entries(PRIORITY_CONFIG).map(([key, c]) => (
+            <button
+              key={key}
+              type="button"
+              role="option"
+              aria-selected={value === key}
+              onClick={() => { onChange(key); setOpen(false) }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-zinc-800/60 transition-colors ${value === key ? 'text-white' : 'text-zinc-400'}`}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const TIME_SLOTS = (() => {
+  const slots = []
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    }
+  }
+  return slots
+})()
+
+function DateTimePicker({ date, time, onChange, onClear, compact }) {
+  const [open, setOpen] = useState(false)
+  const [view, setView] = useState(() => {
+    const d = date ? new Date(date + 'T00:00:00') : new Date()
+    return { y: d.getFullYear(), m: d.getMonth() }
+  })
+  const ref = useRef(null)
+  useClickOutside(ref, open, () => setOpen(false))
+
+  const toggleOpen = () => {
+    if (!open) {
+      const d = date ? new Date(date + 'T00:00:00') : new Date()
+      setView({ y: d.getFullYear(), m: d.getMonth() })
+    }
+    setOpen(o => !o)
+  }
+
+  const monthLabel = new Date(view.y, view.m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const firstDay = new Date(view.y, view.m, 1).getDay()
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate()
+  const todayStr = toLocalDateString(new Date())
+
+  const cells = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const shiftMonth = (delta) => {
+    setView(v => {
+      const next = new Date(v.y, v.m + delta, 1)
+      return { y: next.getFullYear(), m: next.getMonth() }
+    })
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={date ? `Due ${fmtDate(date, time)}. Change date and time` : 'Set due date and time'}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs border transition-all ${
+          compact ? '' : 'bg-zinc-950/60 '
+        }${date ? 'border-zinc-600 text-white bg-zinc-800/60' : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'}`}
+      >
+        <Calendar size={12} />
+        {date ? fmtDate(date, time) : 'No date'}
+        <ChevronDown size={12} />
+      </button>
+
+      {open && (
+        <div role="dialog" aria-label="Pick due date and time" className="absolute left-0 z-40 mt-1 w-72 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-3">
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {[
+              { label: 'Today', get: () => todayStr },
+              { label: 'Tomorrow', get: () => { const d = new Date(); d.setDate(d.getDate() + 1); return toLocalDateString(d) } },
+              { label: 'Next week', get: () => { const d = new Date(); d.setDate(d.getDate() + 7); return toLocalDateString(d) } },
+            ].map(q => (
+              <button
+                key={q.label}
+                type="button"
+                onClick={() => { onChange(q.get(), time || undefined); }}
+                className="px-2.5 py-1 rounded-lg text-[10px] bg-zinc-800/60 border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-zinc-600 transition-all"
+              >
+                {q.label}
+              </button>
+            ))}
+            {date && (
+              <button
+                type="button"
+                onClick={() => { onClear(); setOpen(false) }}
+                className="px-2.5 py-1 rounded-lg text-[10px] bg-red-400/10 border border-red-400/30 text-red-400 hover:bg-red-400/20 transition-all"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between mb-2">
+            <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="p-1 rounded-lg hover:bg-zinc-800/60 text-zinc-400 hover:text-white transition-all">
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-xs text-white font-medium">{monthLabel}</span>
+            <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className="p-1 rounded-lg hover:bg-zinc-800/60 text-zinc-400 hover:text-white transition-all">
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5 mb-2">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <span key={i} className="text-[9px] text-zinc-400 text-center py-1">{d}</span>
+            ))}
+            {cells.map((d, i) => {
+              if (d === null) return <span key={`e${i}`} />
+              const ds = `${view.y}-${String(view.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+              const selected = date === ds
+              const isToday = ds === todayStr
+              return (
+                <button
+                  key={ds}
+                  type="button"
+                  aria-label={ds}
+                  aria-pressed={selected}
+                  onClick={() => onChange(ds, time || undefined)}
+                  className={`h-7 rounded-lg text-[11px] transition-all ${
+                    selected ? 'bg-white text-zinc-950 font-semibold' :
+                    isToday ? 'bg-zinc-800 text-white' :
+                    'text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+                  }`}
+                >
+                  {d}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="border-t border-zinc-800 pt-2">
+            <label className="text-[9px] text-zinc-400 uppercase tracking-wider block mb-1" htmlFor="due-time-select">Time (optional)</label>
+            <select
+              id="due-time-select"
+              value={time || ''}
+              onChange={(e) => onChange(date || todayStr, e.target.value || null)}
+              className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-zinc-600 [color-scheme:dark]"
+            >
+              <option value="">No time</option>
+              {TIME_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -154,13 +367,14 @@ function AppContent() {
   }, [user, syncUser, seedProjects])
 
   // ─── Loading timeout ────────────────────────────────────
-  const [loadTimeout, setLoadTimeout] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
+  const dataReady = convexTasks !== undefined && convexProjects !== undefined
   useEffect(() => {
-    if (convexTasks === undefined || convexProjects === undefined) {
-      const timer = setTimeout(() => setLoadTimeout(true), 10000)
-      return () => clearTimeout(timer)
-    }
-  }, [convexTasks, convexProjects])
+    if (dataReady) return
+    const timer = setTimeout(() => setTimedOut(true), 10000)
+    return () => clearTimeout(timer)
+  }, [dataReady, convexTasks, convexProjects])
+  const loadTimeout = timedOut && !dataReady
 
   // ─── Local state ───────────────────────────────────────
   const dataLoading = (convexTasks === undefined || convexProjects === undefined) && !loadTimeout
@@ -174,15 +388,15 @@ function AppContent() {
   const [filterStatus, setFilterStatus] = useState('active')
   const [detailTaskId, setDetailTaskId] = useState(null)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
-  const [showCompletedToast, setShowCompletedToast] = useState(null)
+  const [toast, setToast] = useState(null)
   const [showAddProject, setShowAddProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColor, setNewProjectColor] = useState(PROJECT_COLORS[0])
   const [editingTaskId, setEditingTaskId] = useState(null)
   const [editingText, setEditingText] = useState('')
   const [pomodoroActive, setPomodoroActive] = useState(false)
-  const [pomodoroTime, setPomodoroTime] = useState(25 * 60)
   const [pomodoroTaskId, setPomodoroTaskId] = useState(null)
+  const [newPriority, setNewPriority] = useState('medium')
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
@@ -193,6 +407,7 @@ function AppContent() {
   const searchRef = useRef(null)
   const editInputRef = useRef(null)
   const toastTimerRef = useRef(null)
+  const pendingRef = useRef(new Set())
 
   // ─── Derived State ─────────────────────────────────────
   const detailTask = useMemo(() =>
@@ -205,6 +420,7 @@ function AppContent() {
     if (filterPriority) result = result.filter(t => t.priority === filterPriority)
     if (filterStatus === 'active') result = result.filter(t => !t.done)
     else if (filterStatus === 'done') result = result.filter(t => t.done)
+    else if (filterStatus === 'overdue') result = result.filter(t => !t.done && isOverdue(t.dueDate, t.dueTime))
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(t =>
@@ -217,7 +433,7 @@ function AppContent() {
       if (a.done !== b.done) return a.done ? 1 : -1
       const pOrder = { high: 0, medium: 1, low: 2 }
       if (pOrder[a.priority] !== pOrder[b.priority]) return pOrder[a.priority] - pOrder[b.priority]
-      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate)
+      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate) || (a.dueTime || '').localeCompare(b.dueTime || '')
       if (a.dueDate) return -1
       if (b.dueDate) return 1
       return (b._creationTime ?? 0) - (a._creationTime ?? 0)
@@ -228,21 +444,23 @@ function AppContent() {
     const now = new Date(); now.setHours(0,0,0,0)
     const active = tasks.filter(t => !t.done)
     const completed = tasks.filter(t => t.done)
-    const overdue = active.filter(t => isOverdue(t.dueDate))
+    const overdue = active.filter(t => isOverdue(t.dueDate, t.dueTime))
     const doneToday = completed.filter(t => {
       if (!t.completedAt) return false
       const d = new Date(t.completedAt); d.setHours(0,0,0,0)
       return d.getTime() === now.getTime()
     })
+    const doneDates = new Set()
+    for (const t of tasks) {
+      if (t.done && t.completedAt) {
+        const td = new Date(t.completedAt); td.setHours(0,0,0,0)
+        doneDates.add(toLocalDateString(td))
+      }
+    }
     let streak = 0
     const d = new Date(now)
     for (let i = 0; i < 365; i++) {
-      const ds = d.toISOString().split('T')[0]
-      const hasDone = tasks.some(t => {
-        if (!t.done || !t.completedAt) return false
-        const td = new Date(t.completedAt); td.setHours(0,0,0,0)
-        return td.toISOString().split('T')[0] === ds
-      })
+      const hasDone = doneDates.has(toLocalDateString(d))
       if (hasDone || i === 0) {
         if (hasDone) streak++
         d.setDate(d.getDate() - 1)
@@ -259,45 +477,95 @@ function AppContent() {
   }, [tasks])
 
   // ─── Toast ─────────────────────────────────────────────
-  const showToast = useCallback((msg) => {
-    setShowCompletedToast(msg)
+  const showToast = useCallback((message, opts = {}) => {
+    setToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction })
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setShowCompletedToast(null), 2000)
+    toastTimerRef.current = setTimeout(() => setToast(null), opts.onAction ? 5000 : 2000)
   }, [])
+
+  const allTags = useMemo(() => {
+    const set = new Set()
+    for (const t of tasks) for (const tag of t.tags) set.add(tag)
+    return [...set].sort().slice(0, 16)
+  }, [tasks])
 
   // ─── Task Handlers ─────────────────────────────────────
   const addTask = useCallback(async () => {
-    if (!input.trim()) return
-    const date = parseNaturalDate(input)
-    const priority = parsePriority(input)
-    const tags = parseTags(input)
-    const text = stripParsed(input) || input.trim()
-    await createTask({
-      text,
-      projectId: activeProject || undefined,
-      priority,
-      dueDate: date ?? undefined,
-      tags,
-    })
-    setInput('')
-    showToast('Task created')
-  }, [input, activeProject, createTask, showToast])
+    if (!input.trim() || pendingRef.current.has('add-task')) return
+    pendingRef.current.add('add-task')
+    try {
+      const date = parseNaturalDate(input)
+      const priority = parsePriority(input) || newPriority
+      const tags = parseTags(input)
+      const text = stripParsed(input) || input.trim()
+      await createTask({
+        text,
+        projectId: activeProject || undefined,
+        priority,
+        dueDate: date ?? undefined,
+        tags,
+      })
+      setInput('')
+      showToast('Task created')
+    } catch {
+      showToast('Failed to create task')
+    } finally {
+      pendingRef.current.delete('add-task')
+    }
+  }, [input, newPriority, activeProject, createTask, showToast])
 
   const toggleTask = useCallback(async (id) => {
     const task = tasks.find(t => t._id === id)
     if (!task) return
-    await updateTask({ id, done: !task.done })
-  }, [tasks, updateTask])
+    try {
+      await updateTask({ id, done: !task.done })
+    } catch {
+      showToast('Failed to update task')
+    }
+  }, [tasks, updateTask, showToast])
 
   const deleteTask = useCallback(async (id) => {
-    await removeTask({ id })
-    if (detailTaskId === id) setDetailTaskId(null)
-    showToast('Task deleted')
-  }, [detailTaskId, removeTask, showToast])
+    if (pendingRef.current.has('del-task-' + id)) return
+    const task = tasks.find(t => t._id === id)
+    if (!task) return
+    pendingRef.current.add('del-task-' + id)
+    try {
+      await removeTask({ id })
+      if (detailTaskId === id) setDetailTaskId(null)
+      showToast('Task deleted', {
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await createTask({
+              text: task.text,
+              projectId: task.projectId,
+              priority: task.priority,
+              dueDate: task.dueDate ?? undefined,
+              dueTime: task.dueTime ?? undefined,
+              tags: task.tags,
+              subtasks: task.subtasks.length ? task.subtasks : undefined,
+              notes: task.notes || undefined,
+            })
+            showToast('Task restored')
+          } catch {
+            showToast('Failed to restore task')
+          }
+        },
+      })
+    } catch {
+      showToast('Failed to delete task')
+    } finally {
+      pendingRef.current.delete('del-task-' + id)
+    }
+  }, [tasks, detailTaskId, removeTask, createTask, showToast])
 
   const updateTaskField = useCallback(async (id, updates) => {
-    await updateTask({ id, ...updates })
-  }, [updateTask])
+    try {
+      await updateTask({ id, ...updates })
+    } catch {
+      showToast('Failed to update task')
+    }
+  }, [updateTask, showToast])
 
   const startInlineEdit = useCallback((task) => {
     setEditingTaskId(task._id)
@@ -305,58 +573,111 @@ function AppContent() {
   }, [])
 
   const saveInlineEdit = useCallback(async () => {
-    if (editingTaskId && editingText.trim()) {
-      await updateTask({ id: editingTaskId, text: editingText.trim() })
+    if (!editingTaskId || !editingText.trim()) {
+      setEditingTaskId(null)
+      setEditingText('')
+      return
     }
-    setEditingTaskId(null)
-    setEditingText('')
-  }, [editingTaskId, editingText, updateTask])
+    if (pendingRef.current.has('edit-' + editingTaskId)) return
+    pendingRef.current.add('edit-' + editingTaskId)
+    try {
+      await updateTask({ id: editingTaskId, text: editingText.trim() })
+    } catch {
+      showToast('Failed to save task')
+    } finally {
+      pendingRef.current.delete('edit-' + editingTaskId)
+      setEditingTaskId(null)
+      setEditingText('')
+    }
+  }, [editingTaskId, editingText, updateTask, showToast])
 
   // ─── Subtask Handlers ──────────────────────────────────
   const addSubtask = useCallback(async (taskId, text) => {
     if (!text.trim()) return
     const task = tasks.find(t => t._id === taskId)
     if (!task) return
-    await updateTask({
-      id: taskId,
-      subtasks: [...task.subtasks, { id: uid('sts'), text: text.trim(), done: false }],
-    })
-  }, [tasks, updateTask])
+    try {
+      await updateTask({
+        id: taskId,
+        subtasks: [...task.subtasks, { id: uid('sts'), text: text.trim(), done: false }],
+      })
+    } catch {
+      showToast('Failed to add subtask')
+    }
+  }, [tasks, updateTask, showToast])
 
   const toggleSubtask = useCallback(async (taskId, subId) => {
     const task = tasks.find(t => t._id === taskId)
     if (!task) return
-    await updateTask({
-      id: taskId,
-      subtasks: task.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s),
-    })
-  }, [tasks, updateTask])
+    try {
+      await updateTask({
+        id: taskId,
+        subtasks: task.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s),
+      })
+    } catch {
+      showToast('Failed to update subtask')
+    }
+  }, [tasks, updateTask, showToast])
 
   const deleteSubtask = useCallback(async (taskId, subId) => {
     const task = tasks.find(t => t._id === taskId)
     if (!task) return
-    await updateTask({
-      id: taskId,
-      subtasks: task.subtasks.filter(s => s.id !== subId),
-    })
-  }, [tasks, updateTask])
+    try {
+      await updateTask({
+        id: taskId,
+        subtasks: task.subtasks.filter(s => s.id !== subId),
+      })
+    } catch {
+      showToast('Failed to delete subtask')
+    }
+  }, [tasks, updateTask, showToast])
 
   // ─── Project Handlers ──────────────────────────────────
   const addProject = useCallback(async () => {
-    if (!newProjectName.trim()) return
-    await createProject({
-      name: newProjectName.trim(),
-      color: newProjectColor,
-    })
-    setNewProjectName('')
-    setShowAddProject(false)
-    showToast('Project created')
+    if (!newProjectName.trim() || pendingRef.current.has('add-project')) return
+    pendingRef.current.add('add-project')
+    try {
+      await createProject({
+        name: newProjectName.trim(),
+        color: newProjectColor,
+      })
+      setNewProjectName('')
+      setShowAddProject(false)
+      showToast('Project created')
+    } catch {
+      showToast('Failed to create project')
+    } finally {
+      pendingRef.current.delete('add-project')
+    }
   }, [newProjectName, newProjectColor, createProject, showToast])
 
   const deleteProject = useCallback(async (id) => {
-    await removeProject({ id })
-    if (activeProject === id) setActiveProject(null)
-  }, [activeProject, removeProject])
+    if (pendingRef.current.has('del-project-' + id)) return
+    const project = projects.find(p => p._id === id)
+    if (!project) return
+    const linkedTasks = tasks.filter(t => t.projectId === id)
+    pendingRef.current.add('del-project-' + id)
+    try {
+      await removeProject({ id })
+      if (activeProject === id) setActiveProject(null)
+      showToast('Project deleted', {
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            const newId = await createProject({ name: project.name, color: project.color, icon: project.icon })
+            await Promise.all(linkedTasks.map(t => updateTask({ id: t._id, projectId: newId })))
+            showToast('Project restored')
+          } catch {
+            showToast('Failed to restore project')
+          }
+        },
+      })
+    } catch {
+      showToast('Failed to delete project')
+    } finally {
+      pendingRef.current.delete('del-project-' + id)
+    }
+  }, [projects, tasks, activeProject, removeProject, createProject, updateTask, showToast])
 
   // ─── Export / Import ───────────────────────────────────
   const handleExport = useCallback(() => {
@@ -371,65 +692,78 @@ function AppContent() {
   }, [tasks, projects, showToast])
 
   const handleImport = useCallback(async () => {
+    if (pendingRef.current.has('import')) return
+    pendingRef.current.add('import')
     try {
       const parsed = JSON.parse(importText)
-      if (parsed.tasks && Array.isArray(parsed.tasks)) {
-        for (const t of parsed.tasks) {
-          await createTask({
-            text: t.text,
-            projectId: t.projectId,
-            priority: t.priority ?? 'medium',
-            dueDate: t.dueDate,
-            tags: t.tags ?? [],
-          })
-        }
-        setShowImportModal(false)
-        setImportText('')
-        showToast('Imported successfully')
-      } else {
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
         showToast('Invalid data format')
+        return
       }
-    } catch {
-      showToast('Invalid JSON')
+      for (const t of parsed.tasks) {
+        await createTask({
+          text: t.text,
+          projectId: t.projectId,
+          priority: t.priority ?? 'medium',
+          dueDate: t.dueDate ?? undefined,
+          dueTime: t.dueTime ?? undefined,
+          tags: t.tags ?? [],
+          subtasks: Array.isArray(t.subtasks) && t.subtasks.length ? t.subtasks : undefined,
+          notes: t.notes ?? undefined,
+        })
+      }
+      setShowImportModal(false)
+      setImportText('')
+      showToast('Imported successfully')
+    } catch (e) {
+      showToast(e instanceof SyntaxError ? 'Invalid JSON' : 'Import failed')
+    } finally {
+      pendingRef.current.delete('import')
     }
   }, [importText, createTask, showToast])
 
   const handleCopyJSON = useCallback(() => {
-    navigator.clipboard.writeText(JSON.stringify({ tasks, projects }, null, 2))
-    showToast('Copied to clipboard')
+    try {
+      navigator.clipboard.writeText(JSON.stringify({ tasks, projects }, null, 2))
+      showToast('Copied to clipboard')
+    } catch {
+      showToast('Failed to copy')
+    }
   }, [tasks, projects, showToast])
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await clerk.signOut({ redirectUrl: '/' })
+    } catch {
+      showToast('Sign out failed')
+    }
+  }, [clerk, showToast])
 
   // ─── Pomodoro ──────────────────────────────────────────
   const startPomodoro = useCallback((taskId) => {
     setPomodoroTaskId(taskId)
-    setPomodoroTime(25 * 60)
     setPomodoroActive(true)
     showToast('Pomodoro started — 25 min')
   }, [showToast])
 
   const stopPomodoro = useCallback(() => {
     setPomodoroActive(false)
-    setPomodoroTime(25 * 60)
     setPomodoroTaskId(null)
   }, [])
 
-  // ─── Pomodoro Timer ────────────────────────────────────
-  useEffect(() => {
-    if (!pomodoroActive || pomodoroTime <= 0) return
-    const interval = setInterval(() => {
-      setPomodoroTime(prev => {
-        if (prev <= 1) {
-          setPomodoroActive(false)
-          if (pomodoroTaskId) {
-            updateTask({ id: pomodoroTaskId, done: true })
-          }
-          return 25 * 60
-        }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [pomodoroActive, pomodoroTime, pomodoroTaskId, updateTask])
+  const completePomodoro = useCallback(async () => {
+    setPomodoroActive(false)
+    const taskId = pomodoroTaskId
+    setPomodoroTaskId(null)
+    if (taskId) {
+      try {
+        await updateTask({ id: taskId, done: true })
+        showToast('Pomodoro complete — task done')
+      } catch {
+        showToast('Failed to complete task')
+      }
+    }
+  }, [pomodoroTaskId, updateTask, showToast])
 
   // ─── Keyboard Shortcuts ────────────────────────────────
   useEffect(() => {
@@ -452,6 +786,7 @@ function AppContent() {
         setShowAddProject(false)
         setShowExportModal(false)
         setShowImportModal(false)
+        setShowProfileMenu(false)
       }
     }
     window.addEventListener('keydown', handler)
@@ -464,36 +799,36 @@ function AppContent() {
 
   // ─── Command Palette ───────────────────────────────────
   const COMMAND_ITEMS = [
-    { label: 'Add new task', icon: Plus },
-    { label: 'Search tasks', icon: Search },
-    { label: 'Dashboard', icon: BarChart3 },
-    { label: 'Journal', icon: BookOpen },
-    { label: 'Show all tasks', icon: Filter },
-    { label: 'Show overdue', icon: AlertCircle },
-    { label: 'Show completed', icon: CheckCircle2 },
-    { label: 'Start Pomodoro', icon: Flame },
-    { label: 'Add project', icon: Folder },
-    { label: 'Export data', icon: Download },
-    { label: 'Sign out', icon: LogOut },
+    { id: 'add', label: 'Add new task', icon: Plus },
+    { id: 'search', label: 'Search tasks', icon: Search },
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'journal', label: 'Journal', icon: BookOpen },
+    { id: 'all', label: 'Show all tasks', icon: Filter },
+    { id: 'overdue', label: 'Show overdue', icon: AlertCircle },
+    { id: 'completed', label: 'Show completed', icon: CheckCircle2 },
+    { id: 'pomodoro', label: 'Start Pomodoro', icon: Flame },
+    { id: 'project', label: 'Add project', icon: Folder },
+    { id: 'export', label: 'Export data', icon: Download },
+    { id: 'signout', label: 'Sign out', icon: LogOut },
   ]
 
-  const handleCommandAction = useCallback((index) => {
+  const handleCommandAction = useCallback((id) => {
     setShowCommandPalette(false)
-    switch (index) {
-      case 0: inputRef.current?.focus(); break
-      case 1: searchRef.current?.focus(); break
-      case 2: setActiveView('dashboard'); break
-      case 3: setActiveView('journal'); break
-      case 4: setActiveProject(null); setFilterPriority(null); setFilterStatus('active'); setActiveView('tasks'); break
-      case 5: setFilterStatus('active'); setFilterPriority(null); setActiveView('tasks'); break
-      case 6: setFilterStatus('done'); setActiveView('tasks'); break
-      case 7: startPomodoro(detailTaskId || null); break
-      case 8: setShowAddProject(true); break
-      case 9: setShowExportModal(true); break
-      case 10: clerk.signOut({ redirectUrl: '/' }); break
+    switch (id) {
+      case 'add': inputRef.current?.focus(); break
+      case 'search': searchRef.current?.focus(); break
+      case 'dashboard': setActiveView('dashboard'); break
+      case 'journal': setActiveView('journal'); break
+      case 'all': setActiveProject(null); setFilterPriority(null); setFilterStatus('active'); setActiveView('tasks'); break
+      case 'overdue': setFilterStatus('overdue'); setFilterPriority(null); setActiveView('tasks'); break
+      case 'completed': setFilterStatus('done'); setActiveView('tasks'); break
+      case 'pomodoro': startPomodoro(detailTaskId || null); break
+      case 'project': setShowAddProject(true); break
+      case 'export': setShowExportModal(true); break
+      case 'signout': handleSignOut(); break
       default: break
     }
-  }, [detailTaskId, startPomodoro, clerk])
+  }, [detailTaskId, startPomodoro, handleSignOut])
 
   // ─── Loading state ─────────────────────────────────────
   if (dataLoading || loadTimeout) {
@@ -510,8 +845,9 @@ function AppContent() {
           {loadTimeout ? (
             <>
               <p className="text-sm text-zinc-400">Taking longer than expected...</p>
-              <p className="text-xs text-zinc-600">Check your connection and try again</p>
+              <p className="text-xs text-zinc-400">Check your connection and try again</p>
               <button
+                type="button"
                 onClick={() => window.location.reload()}
                 className="mt-2 px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 transition-colors"
               >
@@ -533,7 +869,7 @@ function AppContent() {
         <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] rounded-full bg-white/[0.012] blur-[120px]" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-12">
+      <main className="relative z-10 mx-auto max-w-3xl md:max-w-5xl lg:max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
         {/* ── Header ──────────────────────────────────────── */}
         <motion.header
           initial={{ opacity: 0, y: -20 }}
@@ -558,11 +894,13 @@ function AppContent() {
                 ].map(v => (
                   <button
                     key={v.id}
+                    type="button"
+                    aria-pressed={activeView === v.id}
                     onClick={() => setActiveView(v.id)}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs transition-all border ${
                       activeView === v.id
                         ? 'bg-white/10 border-white/20 text-white'
-                        : 'border-transparent text-zinc-600 hover:text-zinc-400'
+                        : 'border-transparent text-zinc-400 hover:text-white'
                     }`}
                   >
                     <v.icon size={12} />
@@ -571,8 +909,10 @@ function AppContent() {
                 ))}
               </div>
               <button
+                type="button"
                 onClick={() => setShowCommandPalette(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-500 text-xs hover:text-zinc-300 hover:border-zinc-700 transition-all"
+                aria-label="Open command palette"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-xs hover:text-zinc-300 hover:border-zinc-700 transition-all"
               >
                 <Command size={12} />
                 <span className="hidden sm:inline">Commands</span>
@@ -581,7 +921,11 @@ function AppContent() {
               {user && (
                 <div className="relative ml-2">
                   <button
+                    type="button"
                     onClick={() => setShowProfileMenu(v => !v)}
+                    aria-label="Open profile menu"
+                    aria-expanded={showProfileMenu}
+                    aria-haspopup="menu"
                     className="flex items-center gap-2 p-1 rounded-xl hover:bg-zinc-800/60 transition-all"
                   >
                     {user.imageUrl && (
@@ -602,11 +946,12 @@ function AppContent() {
                             <p className="text-sm font-medium text-white">{user.fullName}</p>
                           )}
                           {user.primaryEmailAddress?.emailAddress && (
-                            <p className="text-xs text-zinc-500 truncate">{user.primaryEmailAddress.emailAddress}</p>
+                            <p className="text-xs text-zinc-400 truncate">{user.primaryEmailAddress.emailAddress}</p>
                           )}
                         </div>
                         <button
-                          onClick={() => { setShowProfileMenu(false); clerk.signOut({ redirectUrl: '/' }) }}
+                          type="button"
+                          onClick={() => { setShowProfileMenu(false); handleSignOut() }}
                           className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-all"
                         >
                           <LogOut size={14} />
@@ -619,7 +964,7 @@ function AppContent() {
               )}
             </div>
           </div>
-          <p className="text-xs text-zinc-600 uppercase tracking-[0.3em] mt-1">
+          <p className="text-xs text-zinc-400 uppercase tracking-[0.3em] mt-1">
             {activeView === 'tasks' && 'Task management for developers'}
             {activeView === 'dashboard' && 'Analytics & insights'}
             {activeView === 'journal' && 'Daily reflections'}
@@ -641,13 +986,13 @@ function AppContent() {
               {[
                 { label: 'Active', value: stats.active, icon: Target, color: 'text-zinc-300' },
                 { label: 'Done', value: stats.doneToday, icon: CheckCircle2, color: 'text-green-400' },
-                { label: 'Overdue', value: stats.overdue, icon: AlertCircle, color: stats.overdue > 0 ? 'text-red-400' : 'text-zinc-500' },
+                { label: 'Overdue', value: stats.overdue, icon: AlertCircle, color: stats.overdue > 0 ? 'text-red-400' : 'text-zinc-400' },
                 { label: 'Streak', value: `${stats.streak}d`, icon: Flame, color: 'text-amber-400' },
               ].map((s) => (
                 <div key={s.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-3 backdrop-blur-sm">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <s.icon size={12} className="text-zinc-600" strokeWidth={1.5} />
-                    <span className="text-[10px] text-zinc-600 uppercase tracking-wider">{s.label}</span>
+                    <s.icon size={12} className="text-zinc-400" strokeWidth={1.5} />
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-wider">{s.label}</span>
                   </div>
                   <span className={`text-xl font-semibold ${s.color}`}>{s.value}</span>
                 </div>
@@ -663,6 +1008,8 @@ function AppContent() {
             >
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
                 <button
+                  type="button"
+                  aria-pressed={!activeProject}
                   onClick={() => setActiveProject(null)}
                   className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${
                     !activeProject
@@ -672,32 +1019,42 @@ function AppContent() {
                 >
                   All
                 </button>
-                {projects.sort((a,b) => (a.order ?? 0) - (b.order ?? 0)).map(p => (
-                  <button
+                {[...projects].sort((a,b) => (a.order ?? 0) - (b.order ?? 0)).map(p => (
+                  <div
                     key={p._id}
-                    onClick={() => setActiveProject(activeProject === p._id ? null : p._id)}
-                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${
+                    className={`flex-shrink-0 flex items-center rounded-xl text-xs font-medium transition-all border ${
                       activeProject === p._id
                         ? 'border-zinc-600 text-white'
-                        : 'bg-zinc-900/60 text-zinc-500 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300'
+                        : 'bg-zinc-900/60 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300'
                     }`}
                     style={activeProject === p._id ? { backgroundColor: p.color + '22', borderColor: p.color + '44' } : {}}
                   >
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
+                    <button
+                      type="button"
+                      onClick={() => setActiveProject(activeProject === p._id ? null : p._id)}
+                      aria-pressed={activeProject === p._id}
+                      className="flex items-center gap-1.5 px-3 py-1.5"
+                    >
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+                      {p.name}
+                    </button>
                     {activeProject === p._id && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteProject(p._id) }}
-                        className="ml-1 hover:text-white transition-colors"
+                        type="button"
+                        onClick={() => deleteProject(p._id)}
+                        aria-label={`Delete project ${p.name}`}
+                        className="pr-2 hover:text-white transition-colors"
                       >
                         <X size={10} />
                       </button>
                     )}
-                  </button>
+                  </div>
                 ))}
                 <button
+                  type="button"
                   onClick={() => setShowAddProject(true)}
-                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-zinc-600 border border-dashed border-zinc-800 hover:border-zinc-700 hover:text-zinc-400 transition-all"
+                  aria-label="Add project"
+                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 border border-dashed border-zinc-800 hover:border-zinc-700 hover:text-white transition-all"
                 >
                   <Plus size={12} />
                 </button>
@@ -715,8 +1072,8 @@ function AppContent() {
                 >
                   <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 backdrop-blur-sm">
                     <div className="flex items-center gap-2 mb-3">
-                      <Folder size={14} className="text-zinc-500" />
-                      <span className="text-xs text-zinc-500 uppercase tracking-wider">New Project</span>
+                      <Folder size={14} className="text-zinc-400" />
+                      <span className="text-xs text-zinc-400 uppercase tracking-wider">New Project</span>
                     </div>
                     <div className="flex gap-2 mb-3">
                       <input
@@ -724,16 +1081,19 @@ function AppContent() {
                         onChange={e => setNewProjectName(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && addProject()}
                         placeholder="Project name..."
-                        className="flex-1 bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-zinc-600 transition-colors"
+                        className="flex-1 bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600 transition-colors"
                         autoFocus
                       />
                     </div>
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Color</span>
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider">Color</span>
                       <div className="flex gap-1.5">
                         {PROJECT_COLORS.map(c => (
                           <button
                             key={c}
+                            type="button"
+                            aria-label={`Color ${c}`}
+                            aria-pressed={newProjectColor === c}
                             onClick={() => setNewProjectColor(c)}
                             className={`w-5 h-5 rounded-full transition-all ${newProjectColor === c ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : 'hover:scale-110'}`}
                             style={{ backgroundColor: c }}
@@ -742,8 +1102,8 @@ function AppContent() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={addProject} className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors">Create</button>
-                      <button onClick={() => { setShowAddProject(false); setNewProjectName('') }} className="px-3 py-1.5 rounded-xl border border-zinc-700 bg-zinc-800/60 text-xs text-zinc-400 hover:text-zinc-300 transition-colors">Cancel</button>
+                      <button type="button" onClick={addProject} className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors">Create</button>
+                      <button type="button" onClick={() => { setShowAddProject(false); setNewProjectName('') }} className="px-3 py-1.5 rounded-xl border border-zinc-700 bg-zinc-800/60 text-xs text-zinc-400 hover:text-zinc-300 transition-colors">Cancel</button>
                     </div>
                   </div>
                 </motion.div>
@@ -758,43 +1118,52 @@ function AppContent() {
               className="mb-4 space-y-2"
             >
               <div className="relative">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" />
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                 <input
                   ref={searchRef}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder='Search tasks... ( / )'
-                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-2xl pl-9 pr-10 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-zinc-700 transition-all backdrop-blur-sm"
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-2xl pl-9 pr-10 py-2.5 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-700 transition-all backdrop-blur-sm"
                 />
                 {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors">
+                  <button type="button" onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors">
                     <X size={14} />
                   </button>
                 )}
               </div>
               <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {['active', 'done', 'all'].map(s => (
+                {[
+                  { id: 'active', label: 'Active' },
+                  { id: 'done', label: 'Completed' },
+                  { id: 'all', label: 'All' },
+                  { id: 'overdue', label: 'Overdue' },
+                ].map(s => (
                   <button
-                    key={s}
-                    onClick={() => setFilterStatus(s)}
+                    key={s.id}
+                    type="button"
+                    aria-pressed={filterStatus === s.id}
+                    onClick={() => setFilterStatus(s.id)}
                     className={`flex-shrink-0 px-3 py-1 rounded-lg text-xs transition-all border ${
-                      filterStatus === s
+                      filterStatus === s.id
                         ? 'bg-white/10 border-white/20 text-white'
-                        : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300'
+                        : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-400 hover:text-zinc-300'
                     }`}
                   >
-                    {s === 'active' ? 'Active' : s === 'done' ? 'Completed' : 'All'}
+                    {s.label}
                   </button>
                 ))}
                 <span className="w-px h-3 bg-zinc-800 flex-shrink-0" />
                 {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
                   <button
                     key={key}
+                    type="button"
+                    aria-pressed={filterPriority === key}
                     onClick={() => setFilterPriority(filterPriority === key ? null : key)}
                     className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all border ${
                       filterPriority === key
                         ? `${cfg.bg} ${cfg.border} ${cfg.text}`
-                        : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300'
+                        : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-400 hover:text-zinc-300'
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: PRIORITY_CONFIG[key].color }} />
@@ -811,31 +1180,60 @@ function AppContent() {
               transition={{ delay: 0.25, type: 'spring', stiffness: 280, damping: 24 }}
               className="mb-6"
             >
-              <div className="relative group">
+              <form
+                onSubmit={(e) => { e.preventDefault(); addTask() }}
+                className="relative group"
+              >
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-white/[0.04] to-transparent rounded-3xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-500" />
                 <div className="relative flex items-center bg-zinc-900/60 border border-zinc-800 rounded-3xl backdrop-blur-sm overflow-hidden group-focus-within:border-zinc-700 transition-colors">
-                  <Plus size={16} className="ml-4 text-zinc-600 flex-shrink-0 group-focus-within:text-zinc-400 transition-colors" />
+                  <Plus size={16} className="ml-4 text-zinc-400 flex-shrink-0 group-focus-within:text-zinc-400 transition-colors" />
                   <input
                     ref={inputRef}
                     value={input}
                     onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && addTask()}
                     placeholder="Add a task... ( #tag tomorrow high )"
-                    className="flex-1 bg-transparent px-3 py-3.5 text-sm text-white placeholder:text-zinc-600 outline-none"
+                    aria-label="Add a task"
+                    className="flex-1 bg-transparent px-3 py-3.5 text-sm text-white placeholder:text-zinc-400 outline-none"
                   />
                   {input && (
-                    <button onClick={addTask} className="mr-2 px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors">
+                    <button type="submit" className="mr-2 px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors">
                       Add
                     </button>
                   )}
                 </div>
+                {input && (
+                  <div className="flex items-center gap-2 mt-2 px-1 flex-wrap">
+                    <PriorityDropdown value={newPriority} onChange={setNewPriority} />
+                    {parseNaturalDate(input) && (
+                      <span className="flex items-center gap-1 text-[10px] text-zinc-400">
+                        <Calendar size={10} />
+                        {fmtDate(parseNaturalDate(input))}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </form>
+              <div className="flex items-center gap-3 mt-2 px-1 flex-wrap">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider">Tips:</span>
+                <span className="text-[10px] text-zinc-400">#tag</span>
+                <span className="text-[10px] text-zinc-400">tomorrow / monday / sep 25</span>
+                <span className="text-[10px] text-zinc-400">high / medium / low</span>
               </div>
-              <div className="flex items-center gap-3 mt-2 px-1">
-                <span className="text-[10px] text-zinc-700 uppercase tracking-wider">Tips:</span>
-                <span className="text-[10px] text-zinc-600">#tag</span>
-                <span className="text-[10px] text-zinc-600">tomorrow / monday / sep 25</span>
-                <span className="text-[10px] text-zinc-600">high / medium / low</span>
-              </div>
+              {allTags.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 px-1 flex-wrap">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider">Tags:</span>
+                  {allTags.map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setInput(prev => `${prev.replace(/\s*$/, '')} #${tag} `)}
+                      className="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] text-zinc-400 bg-zinc-800/40 border border-zinc-700/40 hover:border-zinc-600 hover:text-white transition-all"
+                    >
+                      <Hash size={8} /> {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
 
             {/* Task List */}
@@ -851,13 +1249,15 @@ function AppContent() {
                       className="text-center py-16"
                     >
                       <div className="w-16 h-16 mx-auto mb-4 rounded-3xl bg-zinc-900/60 border border-zinc-800 flex items-center justify-center">
-                        <Target size={24} className="text-zinc-700" />
+                        <Target size={24} className="text-zinc-400" />
                       </div>
-                      <p className="text-zinc-500 text-sm mb-1">
-                        {filterStatus === 'done' ? 'No completed tasks yet' : 'No tasks found'}
+                      <p className="text-zinc-400 text-sm mb-1">
+                        {filterStatus === 'done' ? 'No completed tasks yet' :
+                         filterStatus === 'overdue' ? 'Nothing overdue' : 'No tasks found'}
                       </p>
-                      <p className="text-zinc-600 text-xs">
-                        {filterStatus === 'done' ? 'Complete some tasks to see them here' : 'Add a task above or adjust your filters'}
+                      <p className="text-zinc-400 text-xs">
+                        {filterStatus === 'done' ? 'Complete some tasks to see them here' :
+                         filterStatus === 'overdue' ? 'You\'re all caught up' : 'Add a task above or adjust your filters'}
                       </p>
                     </motion.div>
                   )}
@@ -914,29 +1314,32 @@ function AppContent() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowExportModal(true)}
-                  className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
                 >
                   <Download size={12} /> Export
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowImportModal(true)}
-                  className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
                 >
                   <Upload size={12} /> Import
                 </button>
                 <button
+                  type="button"
                   onClick={handleCopyJSON}
-                  className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
                 >
                   <Copy size={12} /> Copy
                 </button>
               </div>
-              <span className="text-[10px] text-zinc-800 uppercase tracking-wider">DevFlow v2</span>
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wider">DevFlow v2</span>
             </div>
           </motion.footer>
         )}
-      </div>
+      </main>
 
       {/* ═══════════════════════════════════════════════════════
           TASK DETAIL MODAL
@@ -949,6 +1352,9 @@ function AppContent() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             onClick={() => setDetailTaskId(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Task details"
           >
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div
@@ -960,9 +1366,9 @@ function AppContent() {
               className="relative w-full max-w-lg bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden max-h-[85vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between p-5 pb-0">
-                <span className="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">Task Details</span>
-                <button onClick={() => setDetailTaskId(null)} className="p-1.5 rounded-xl hover:bg-zinc-800/60 transition-colors">
-                  <X size={14} className="text-zinc-500" />
+                <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">Task Details</span>
+                <button type="button" onClick={() => setDetailTaskId(null)} aria-label="Close task details" className="p-1.5 rounded-xl hover:bg-zinc-800/60 transition-colors">
+                  <X size={14} className="text-zinc-400" />
                 </button>
               </div>
 
@@ -978,7 +1384,7 @@ function AppContent() {
                   />
                 ) : (
                   <h2
-                    className={`text-base font-medium text-white leading-snug cursor-pointer hover:text-zinc-300 transition-colors ${detailTask.done ? 'line-through text-zinc-500' : ''}`}
+                    className={`text-base font-medium text-white leading-snug cursor-pointer hover:text-zinc-300 transition-colors ${detailTask.done ? 'line-through text-zinc-400' : ''}`}
                     onClick={() => startInlineEdit(detailTask)}
                   >
                     {detailTask.text}
@@ -988,16 +1394,18 @@ function AppContent() {
 
               {/* Priority */}
               <div className="px-5 pt-4">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">Priority</label>
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block">Priority</label>
                 <div className="flex gap-2">
                   {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
                     <button
                       key={key}
+                      type="button"
+                      aria-pressed={detailTask.priority === key}
                       onClick={() => updateTaskField(detailTask._id, { priority: key })}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all border ${
                         detailTask.priority === key
                           ? `${cfg.bg} ${cfg.border} ${cfg.text}`
-                          : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300'
+                          : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-400 hover:text-zinc-300'
                       }`}
                     >
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cfg.color }} />
@@ -1009,16 +1417,18 @@ function AppContent() {
 
               {/* Project */}
               <div className="px-5 pt-4">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">Project</label>
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block">Project</label>
                 <div className="flex flex-wrap gap-2">
                   {projects.map(p => (
                     <button
                       key={p._id}
+                      type="button"
+                      aria-pressed={detailTask.projectId === p._id}
                       onClick={() => updateTaskField(detailTask._id, { projectId: p._id })}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all border ${
                         detailTask.projectId === p._id
                           ? 'border-zinc-600 text-white'
-                          : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300'
+                          : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-400 hover:text-zinc-300'
                       }`}
                       style={detailTask.projectId === p._id ? { backgroundColor: p.color + '22', borderColor: p.color + '44' } : {}}
                     >
@@ -1031,41 +1441,31 @@ function AppContent() {
 
               {/* Due Date */}
               <div className="px-5 pt-4">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">Due Date</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={detailTask.dueDate || ''}
-                    onChange={e => updateTaskField(detailTask._id, { dueDate: e.target.value || undefined })}
-                    className="bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-1.5 text-sm text-white outline-none focus:border-zinc-600 [color-scheme:dark]"
-                  />
-                  {detailTask.dueDate && (
-                    <span className={`text-xs ${isOverdue(detailTask.dueDate) && !detailTask.done ? 'text-red-400' : 'text-zinc-500'}`}>
-                      {fmtDate(detailTask.dueDate)}
-                    </span>
-                  )}
-                  {detailTask.dueDate && (
-                    <button
-                      onClick={() => updateTaskField(detailTask._id, { dueDate: undefined })}
-                      className="text-zinc-600 hover:text-zinc-400 transition-colors"
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block">Due Date</label>
+                <DateTimePicker
+                  date={detailTask.dueDate || null}
+                  time={detailTask.dueTime || null}
+                  onChange={(d, t) => updateTaskField(detailTask._id, { dueDate: d, dueTime: t ?? null })}
+                  onClear={() => updateTaskField(detailTask._id, { dueDate: null, dueTime: null })}
+                />
+                {detailTask.dueDate && !detailTask.done && isOverdue(detailTask.dueDate, detailTask.dueTime) && (
+                  <span className="ml-2 text-xs text-red-400">Overdue</span>
+                )}
               </div>
 
               {/* Tags */}
               <div className="px-5 pt-4">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">Tags</label>
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block">Tags</label>
                 <div className="flex flex-wrap gap-1.5">
                   {detailTask.tags.map(tag => (
                     <span key={tag} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-xs text-zinc-400">
                       <Hash size={10} />
                       {tag}
                       <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
                         onClick={() => updateTaskField(detailTask._id, { tags: detailTask.tags.filter(t => t !== tag) })}
-                        className="text-zinc-600 hover:text-zinc-300 ml-0.5"
+                        className="text-zinc-400 hover:text-white ml-0.5"
                       >
                         <X size={10} />
                       </button>
@@ -1077,9 +1477,9 @@ function AppContent() {
 
               {/* Subtasks */}
               <div className="px-5 pt-4">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block">
                   Subtasks {detailTask.subtasks.length > 0 && (
-                    <span className="text-zinc-500 normal-case">
+                    <span className="text-zinc-400 normal-case">
                       {detailTask.subtasks.filter(s => s.done).length}/{detailTask.subtasks.length}
                     </span>
                   )}
@@ -1088,6 +1488,9 @@ function AppContent() {
                   {detailTask.subtasks.map(sub => (
                     <div key={sub.id} className="flex items-center gap-2 group">
                       <button
+                        type="button"
+                        aria-label={sub.done ? `Reopen subtask ${sub.text}` : `Complete subtask ${sub.text}`}
+                        aria-pressed={sub.done}
                         onClick={() => toggleSubtask(detailTask._id, sub.id)}
                         className={`w-4 h-4 rounded-md border flex-shrink-0 flex items-center justify-center transition-all ${
                           sub.done
@@ -1097,12 +1500,14 @@ function AppContent() {
                       >
                         {sub.done && <Check size={10} className="text-white" />}
                       </button>
-                      <span className={`text-sm flex-1 ${sub.done ? 'text-zinc-600 line-through' : 'text-zinc-300'}`}>
+                      <span className={`text-sm flex-1 ${sub.done ? 'text-zinc-400 line-through' : 'text-zinc-300'}`}>
                         {sub.text}
                       </span>
                       <button
+                        type="button"
+                        aria-label={`Delete subtask ${sub.text}`}
                         onClick={() => deleteSubtask(detailTask._id, sub.id)}
-                        className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-400 transition-all"
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-zinc-400 hover:text-red-400 transition-all"
                       >
                         <X size={12} />
                       </button>
@@ -1114,19 +1519,25 @@ function AppContent() {
 
               {/* Notes */}
               <div className="px-5 pt-4 pb-5">
-                <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 block">Notes</label>
+                <label className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2 block" htmlFor="task-notes">Notes</label>
                 <textarea
-                  value={detailTask.notes || ''}
-                  onChange={e => updateTaskField(detailTask._id, { notes: e.target.value })}
+                  id="task-notes"
+                  defaultValue={detailTask.notes || ''}
+                  key={`notes-${detailTask._id}-${detailTask._creationTime}`}
+                  onBlur={e => {
+                    const v = e.target.value
+                    if (v !== (detailTask.notes || '')) updateTaskField(detailTask._id, { notes: v })
+                  }}
                   placeholder="Add notes, code snippets, links..."
                   rows={4}
-                  className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-zinc-600 resize-none font-mono leading-relaxed"
+                  className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus:border-zinc-600 resize-none font-mono leading-relaxed"
                 />
               </div>
 
               {/* Actions */}
               <div className="px-5 pb-5 flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => { toggleTask(detailTask._id); setDetailTaskId(null) }}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all ${
                     detailTask.done
@@ -1138,13 +1549,16 @@ function AppContent() {
                   {detailTask.done ? 'Undo' : 'Complete'}
                 </button>
                 <button
+                  type="button"
                   onClick={() => { startPomodoro(detailTask._id); setDetailTaskId(null) }}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm bg-orange-400/10 border border-orange-400/30 text-orange-400 hover:bg-orange-400/20 transition-all"
                 >
                   <Flame size={14} /> Focus
                 </button>
                 <button
+                  type="button"
                   onClick={() => deleteTask(detailTask._id)}
+                  aria-label="Delete task"
                   className="flex items-center justify-center px-3 py-2.5 rounded-xl text-sm bg-red-400/10 border border-red-400/30 text-red-400 hover:bg-red-400/20 transition-all"
                 >
                   <Trash2 size={14} />
@@ -1166,6 +1580,9 @@ function AppContent() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] p-4"
             onClick={() => setShowCommandPalette(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
           >
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div
@@ -1177,20 +1594,21 @@ function AppContent() {
               className="relative w-full max-w-md bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl overflow-hidden"
             >
               <div className="p-4 border-b border-zinc-800">
-                <div className="flex items-center gap-2 text-zinc-500">
+                <div className="flex items-center gap-2 text-zinc-400">
                   <Command size={14} />
                   <span className="text-sm">Command palette</span>
                   <kbd className="ml-auto text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded-md border border-zinc-700">ESC</kbd>
                 </div>
               </div>
               <div className="p-2">
-                {COMMAND_ITEMS.map((item, i) => (
+                {COMMAND_ITEMS.map((item) => (
                   <button
-                    key={i}
-                    onClick={() => handleCommandAction(i)}
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleCommandAction(item.id)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-zinc-300 hover:bg-zinc-800/60 hover:text-white transition-all text-left"
                   >
-                    <item.icon size={14} className="text-zinc-500" />
+                    <item.icon size={14} className="text-zinc-400" />
                     {item.label}
                   </button>
                 ))}
@@ -1211,6 +1629,9 @@ function AppContent() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             onClick={() => setShowExportModal(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Export data"
           >
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div
@@ -1221,17 +1642,21 @@ function AppContent() {
               className="relative w-full max-w-sm bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl p-6"
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">Export Data</span>
-                <button onClick={() => setShowExportModal(false)} className="p-1 rounded-xl hover:bg-zinc-800/60 transition-colors">
-                  <X size={14} className="text-zinc-500" />
+                <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">Export Data</span>
+                <button type="button" onClick={() => setShowExportModal(false)} aria-label="Close export dialog" className="p-1 rounded-xl hover:bg-zinc-800/60 transition-colors">
+                  <X size={14} className="text-zinc-400" />
                 </button>
               </div>
               <p className="text-sm text-zinc-400 mb-5">Download your tasks and projects as a JSON file.</p>
               <div className="flex gap-2">
-                <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-white text-zinc-950 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)]">
-                  <Download size={14} /> Download JSON
-                </button>
-                <button onClick={handleCopyJSON} className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:text-white transition-all">
+              <button
+                type="button"
+                onClick={handleExport}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-white text-zinc-950 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)]"
+              >
+                <Download size={14} /> Download JSON
+              </button>
+              <button type="button" onClick={handleCopyJSON} aria-label="Copy JSON to clipboard" className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:text-white transition-all">
                   <Copy size={14} />
                 </button>
               </div>
@@ -1251,6 +1676,9 @@ function AppContent() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             onClick={() => setShowImportModal(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Import data"
           >
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div
@@ -1261,9 +1689,9 @@ function AppContent() {
               className="relative w-full max-w-md bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl p-6"
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">Import Data</span>
-                <button onClick={() => setShowImportModal(false)} className="p-1 rounded-xl hover:bg-zinc-800/60 transition-colors">
-                  <X size={14} className="text-zinc-500" />
+                <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">Import Data</span>
+                <button type="button" onClick={() => setShowImportModal(false)} aria-label="Close import dialog" className="p-1 rounded-xl hover:bg-zinc-800/60 transition-colors">
+                  <X size={14} className="text-zinc-400" />
                 </button>
               </div>
               <p className="text-sm text-zinc-400 mb-3">Paste your JSON backup to restore tasks and projects.</p>
@@ -1271,10 +1699,12 @@ function AppContent() {
                 value={importText}
                 onChange={e => setImportText(e.target.value)}
                 placeholder='{"tasks":[...],"projects":[...]}'
+                aria-label="JSON backup to import"
                 rows={6}
-                className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-zinc-600 resize-none font-mono mb-4"
+                className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus:border-zinc-600 resize-none font-mono mb-4"
               />
               <button
+                type="button"
                 onClick={handleImport}
                 disabled={!importText.trim()}
                 className="w-full py-2.5 rounded-xl text-sm font-medium bg-white text-zinc-950 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1291,32 +1721,12 @@ function AppContent() {
           ═══════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {pomodoroActive && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            className="fixed bottom-6 right-6 z-40"
-          >
-            <div className="bg-zinc-900/95 border border-orange-400/30 rounded-3xl p-4 shadow-2xl backdrop-blur-xl min-w-[180px]">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Flame size={14} className="text-orange-400" />
-                  <span className="text-xs text-orange-400 font-medium">Focus Mode</span>
-                </div>
-                <button onClick={stopPomodoro} className="text-zinc-600 hover:text-zinc-400 transition-colors">
-                  <X size={12} />
-                </button>
-              </div>
-              <div className="text-2xl font-mono text-white text-center my-2">
-                {Math.floor(pomodoroTime / 60).toString().padStart(2, '0')}:{(pomodoroTime % 60).toString().padStart(2, '0')}
-              </div>
-              {pomodoroTaskId && (
-                <p className="text-[10px] text-zinc-500 text-center truncate">
-                  {tasks.find(t => t._id === pomodoroTaskId)?.text || 'Unnamed task'}
-                </p>
-              )}
-            </div>
-          </motion.div>
+          <PomodoroOrb
+            key={pomodoroTaskId || 'no-task'}
+            taskText={pomodoroTaskId ? (tasks.find(t => t._id === pomodoroTaskId)?.text || 'Unnamed task') : null}
+            onStop={stopPomodoro}
+            onComplete={completePomodoro}
+          />
         )}
       </AnimatePresence>
 
@@ -1324,7 +1734,7 @@ function AppContent() {
           TOAST
           ═══════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {showCompletedToast && (
+        {toast && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1332,14 +1742,71 @@ function AppContent() {
             transition={{ type: 'spring', stiffness: 400, damping: 26 }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
           >
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
+            <div role="status" className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
               <Check size={14} className="text-white/80" />
-              <span className="text-sm text-zinc-300">{showCompletedToast}</span>
+              <span className="text-sm text-zinc-300">{toast.message}</span>
+              {toast.onAction && (
+                <button
+                  type="button"
+                  onClick={() => { const fn = toast.onAction; setToast(null); fn() }}
+                  className="ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+                >
+                  {toast.actionLabel || 'Undo'}
+                </button>
+              )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POMODORO ORB (isolated re-render: only this ticks each second)
+// ═══════════════════════════════════════════════════════════════════
+
+function PomodoroOrb({ taskText, onStop, onComplete }) {
+  const [time, setTime] = useState(25 * 60)
+  const doneRef = useRef(false)
+
+  useEffect(() => {
+    const iv = setInterval(() => setTime(t => (t <= 1 ? 0 : t - 1)), 1000)
+    return () => clearInterval(iv)
+  }, [])
+
+  useEffect(() => {
+    if (time <= 0 && !doneRef.current) {
+      doneRef.current = true
+      onComplete()
+    }
+  }, [time, onComplete])
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.8, y: 20 }}
+      className="fixed bottom-6 right-6 z-40"
+    >
+      <div className="bg-zinc-900/95 border border-orange-400/30 rounded-3xl p-4 shadow-2xl backdrop-blur-xl min-w-[180px]">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Flame size={14} className="text-orange-400" />
+            <span className="text-xs text-orange-400 font-medium">Focus Mode</span>
+          </div>
+          <button type="button" onClick={onStop} aria-label="Stop Pomodoro" className="text-zinc-400 hover:text-white transition-colors">
+            <X size={12} />
+          </button>
+        </div>
+        <div className="text-2xl font-mono text-white text-center my-2" role="timer">
+          {Math.floor(time / 60).toString().padStart(2, '0')}:{(time % 60).toString().padStart(2, '0')}
+        </div>
+        {taskText && (
+          <p className="text-[10px] text-zinc-400 text-center truncate">{taskText}</p>
+        )}
+      </div>
+    </motion.div>
   )
 }
 
@@ -1353,11 +1820,11 @@ function DashboardView({ stats, tasks }) {
     const days = []
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now); d.setDate(d.getDate() - i)
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = toLocalDateString(d)
       const count = tasks.filter(t => {
         if (!t.done || !t.completedAt) return false
         const td = new Date(t.completedAt); td.setHours(0,0,0,0)
-        return td.toISOString().split('T')[0] === dateStr
+        return toLocalDateString(td) === dateStr
       }).length
       days.push({ label: d.toLocaleDateString('en-US', { weekday: 'short' }), count, date: dateStr })
     }
@@ -1371,11 +1838,11 @@ function DashboardView({ stats, tasks }) {
     const days = []
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now); d.setDate(d.getDate() - i)
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = toLocalDateString(d)
       const count = tasks.filter(t => {
         if (!t.done || !t.completedAt) return false
         const td = new Date(t.completedAt); td.setHours(0,0,0,0)
-        return td.toISOString().split('T')[0] === dateStr
+        return toLocalDateString(td) === dateStr
       }).length
       days.push({ date: dateStr, count })
     }
@@ -1403,11 +1870,11 @@ function DashboardView({ stats, tasks }) {
         {[
           { label: 'Total Active', value: stats.active, color: 'text-zinc-300' },
           { label: 'Completed', value: stats.completed, color: 'text-green-400' },
-          { label: 'Overdue', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-400' : 'text-zinc-500' },
+          { label: 'Overdue', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-400' : 'text-zinc-400' },
           { label: 'Streak', value: `${stats.streak} days`, color: 'text-amber-400' },
         ].map(s => (
           <div key={s.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 backdrop-blur-sm">
-            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">{s.label}</p>
+            <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{s.label}</p>
             <p className={`text-2xl font-semibold ${s.color}`}>{s.value}</p>
           </div>
         ))}
@@ -1415,7 +1882,7 @@ function DashboardView({ stats, tasks }) {
 
       {/* Weekly Chart */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-4">This Week</p>
+        <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-4">This Week</p>
         <div className="flex items-end gap-2 h-32">
           {weeklyData.map((d, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-2">
@@ -1425,7 +1892,7 @@ function DashboardView({ stats, tasks }) {
                   style={{ height: `${(d.count / maxWeekly) * 100}%`, bottom: 0, top: 'auto' }}
                 />
               </div>
-              <span className="text-[10px] text-zinc-600">{d.label}</span>
+          <span className="text-[10px] text-zinc-400">{d.label}</span>
             </div>
           ))}
         </div>
@@ -1433,7 +1900,7 @@ function DashboardView({ stats, tasks }) {
 
       {/* Monthly Heatmap */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-4">Last 30 Days</p>
+        <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-4">Last 30 Days</p>
         <div className="flex flex-wrap gap-1">
           {monthlyData.map((d, i) => (
             <div
@@ -1450,19 +1917,19 @@ function DashboardView({ stats, tasks }) {
           ))}
         </div>
         <div className="flex items-center gap-2 mt-3">
-          <span className="text-[10px] text-zinc-600">Less</span>
+          <span className="text-[10px] text-zinc-400">Less</span>
           {[0,1,2,3,4].map(i => (
             <div key={i} className="w-3 h-3 rounded-sm" style={{
               backgroundColor: ['#18181b','#27272a','#3f3f46','#52525b','#71717a'][i]
             }} />
           ))}
-          <span className="text-[10px] text-zinc-600">More</span>
+          <span className="text-[10px] text-zinc-400">More</span>
         </div>
       </div>
 
       {/* Priority Breakdown */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-4">Active by Priority</p>
+        <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-4">Active by Priority</p>
         <div className="space-y-3">
           {[
             { label: 'High', count: byPriority.high, color: '#fb923c' },
@@ -1470,7 +1937,7 @@ function DashboardView({ stats, tasks }) {
             { label: 'Low', count: byPriority.low, color: '#4ade80' },
           ].map(p => (
             <div key={p.label} className="flex items-center gap-3">
-              <span className="text-xs text-zinc-500 w-14">{p.label}</span>
+              <span className="text-xs text-zinc-400 w-14">{p.label}</span>
               <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-500"
@@ -1480,7 +1947,7 @@ function DashboardView({ stats, tasks }) {
                   }}
                 />
               </div>
-              <span className="text-xs text-zinc-500 w-6 text-right">{p.count}</span>
+              <span className="text-xs text-zinc-400 w-6 text-right">{p.count}</span>
             </div>
           ))}
         </div>
@@ -1494,42 +1961,132 @@ function DashboardView({ stats, tasks }) {
 // ═══════════════════════════════════════════════════════════════════
 
 function JournalView({ tasks }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = useMemo(() => toLocalDateString(new Date()), [])
   const [selectedDate, setSelectedDate] = useState(today)
   const [content, setContent] = useState('')
   const [mood, setMood] = useState('')
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [journalToast, setJournalToast] = useState(null)
+  const toastTimerRef = useRef(null)
+  const hydratedForRef = useRef(null)
+  const contentRef = useRef('')
+  const moodRef = useRef('')
 
   const journalEntries = useQuery(api.journal.list)
   const getJournalByDate = useQuery(api.journal.getByDate, { date: selectedDate })
   const saveJournal = useMutation(api.journal.create)
-  const [showToast, setShowToast] = useState(null)
-  const toastRef = useRef(null)
-
-  const flash = useCallback((msg) => {
-    setShowToast(msg)
-    if (toastRef.current) clearTimeout(toastRef.current)
-    toastRef.current = setTimeout(() => setShowToast(null), 2000)
-  }, [])
+  const removeJournal = useMutation(api.journal.remove)
 
   useEffect(() => {
+    contentRef.current = content
+    moodRef.current = mood
+  }, [content, mood])
+
+  const flash = useCallback((message, opts = {}) => {
+    setJournalToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction })
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setJournalToast(null), opts.onAction ? 5000 : 2000)
+  }, [])
+
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }, [])
+
+  // Hydrate when date changes (query for new date starts as undefined)
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    hydratedForRef.current = selectedDate
+    setDirty(false)
     if (getJournalByDate) {
-      setContent(getJournalByDate.content || '') // eslint-disable-line react-hooks/set-state-in-effect
+      setContent(getJournalByDate.content || '')
       setMood(getJournalByDate.mood || '')
     } else {
       setContent('')
       setMood('')
     }
-  }, [getJournalByDate, selectedDate])
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate])
+
+  // Hydrate when query resolves for the current date — skip if user edited
+  useEffect(() => {
+    if (dirty || hydratedForRef.current !== selectedDate) return
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (getJournalByDate) {
+      setContent(getJournalByDate.content || '')
+      setMood(getJournalByDate.mood || '')
+    } else if (getJournalByDate === null) {
+      setContent('')
+      setMood('')
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getJournalByDate])
 
   const handleSave = useCallback(async () => {
-    await saveJournal({
-      date: selectedDate,
-      content,
-      mood: mood || undefined,
-    })
-    flash('Journal saved')
-  }, [selectedDate, content, mood, saveJournal, flash])
+    if (saving) return
+    setSaving(true)
+    try {
+      const snapshot = { content: contentRef.current, mood: moodRef.current }
+      await saveJournal({
+        date: selectedDate,
+        content: snapshot.content,
+        mood: snapshot.mood || undefined,
+      })
+      if (contentRef.current === snapshot.content && moodRef.current === snapshot.mood) {
+        setDirty(false)
+      }
+      flash('Journal saved')
+    } catch {
+      flash('Failed to save journal')
+    } finally {
+      setSaving(false)
+    }
+  }, [saving, selectedDate, saveJournal, flash])
+
+  const deleteEntry = useCallback(async () => {
+    const entry = getJournalByDate
+    if (!entry || saving) return
+    try {
+      await removeJournal({ id: entry._id })
+      setContent('')
+      setMood('')
+      setDirty(false)
+      flash('Journal deleted', {
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await saveJournal({
+              date: entry.date,
+              content: entry.content,
+              mood: entry.mood,
+              taskIds: entry.taskIds,
+            })
+            setSelectedDate(entry.date)
+            flash('Journal restored')
+          } catch {
+            flash('Failed to restore journal')
+          }
+        },
+      })
+    } catch {
+      flash('Failed to delete journal')
+    }
+  }, [getJournalByDate, saving, removeJournal, saveJournal, flash])
+
+  const gotoDate = useCallback(async (date) => {
+    if (date === selectedDate) return
+    if (dirty && (contentRef.current.trim() || moodRef.current)) {
+      try {
+        await saveJournal({
+          date: selectedDate,
+          content: contentRef.current,
+          mood: moodRef.current || undefined,
+        })
+      } catch { /* best-effort autosave on navigate */ }
+    }
+    setSelectedDate(date)
+  }, [selectedDate, dirty, saveJournal])
 
   const filteredEntries = useMemo(() => {
     if (!journalEntries) return []
@@ -1547,8 +2104,8 @@ function JournalView({ tasks }) {
     const prev = new Date(d); prev.setDate(prev.getDate() - 1)
     const next = new Date(d); next.setDate(next.getDate() + 1)
     return {
-      prev: prev.toISOString().split('T')[0],
-      next: next.toISOString().split('T')[0],
+      prev: toLocalDateString(prev),
+      next: toLocalDateString(next),
       label: d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
     }
   }, [selectedDate])
@@ -1567,8 +2124,10 @@ function JournalView({ tasks }) {
       {/* Date Navigation */}
       <div className="flex items-center justify-between bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 backdrop-blur-sm">
         <button
-          onClick={() => setSelectedDate(dateNav.prev)}
-          className="p-1.5 rounded-xl hover:bg-zinc-800/60 text-zinc-500 hover:text-white transition-all"
+          type="button"
+          onClick={() => gotoDate(dateNav.prev)}
+          aria-label="Previous day"
+          className="p-1.5 rounded-xl hover:bg-zinc-800/60 text-zinc-400 hover:text-white transition-all"
         >
           <ChevronLeft size={16} />
         </button>
@@ -1579,8 +2138,10 @@ function JournalView({ tasks }) {
           )}
         </div>
         <button
-          onClick={() => setSelectedDate(dateNav.next)}
-          className="p-1.5 rounded-xl hover:bg-zinc-800/60 text-zinc-500 hover:text-white transition-all"
+          type="button"
+          onClick={() => gotoDate(dateNav.next)}
+          aria-label="Next day"
+          className="p-1.5 rounded-xl hover:bg-zinc-800/60 text-zinc-400 hover:text-white transition-all"
         >
           <ChevronRight size={16} />
         </button>
@@ -1589,34 +2150,51 @@ function JournalView({ tasks }) {
       {/* Editor */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-[10px] text-zinc-600 uppercase tracking-[0.3em]">Journal Entry</span>
-          <button
-            onClick={handleSave}
-            className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
-          >
-            Save
-          </button>
+          <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">Journal Entry</span>
+          <div className="flex items-center gap-2">
+            {getJournalByDate && (
+              <button
+                type="button"
+                onClick={deleteEntry}
+                aria-label="Delete journal entry"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+            </button>
+          </div>
         </div>
 
         <textarea
           value={content}
-          onChange={e => setContent(e.target.value)}
+          onChange={e => { setContent(e.target.value); setDirty(true) }}
           placeholder="What did you work on today? Any wins, challenges, or ideas..."
+          aria-label="Journal content"
           rows={8}
-          className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-zinc-600 resize-none font-mono leading-relaxed mb-4"
+          className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus:border-zinc-600 resize-none font-mono leading-relaxed mb-4"
         />
 
         <div>
-          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Mood</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2" id="mood-label">Mood</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-labelledby="mood-label">
             {MOODS.map(m => (
               <button
                 key={m}
-                onClick={() => setMood(mood === m ? '' : m)}
+                type="button"
+                aria-pressed={mood === m}
+                onClick={() => { setMood(mood === m ? '' : m); setDirty(true) }}
                 className={`px-3 py-1 rounded-xl text-xs transition-all border ${
                   mood === m
                     ? 'bg-white/10 border-white/20 text-white'
-                    : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-500 hover:text-zinc-300'
+                    : 'bg-zinc-900/40 border-zinc-800/50 text-zinc-400 hover:text-zinc-300'
                 }`}
               >
                 {m}
@@ -1629,7 +2207,7 @@ function JournalView({ tasks }) {
       {/* Active Tasks */}
       {todayTasks.length > 0 && (
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
-          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Active Tasks</p>
+          <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-3">Active Tasks</p>
           <div className="space-y-2">
             {todayTasks.map(t => (
               <div key={t._id} className="flex items-center gap-2 text-sm text-zinc-400">
@@ -1638,7 +2216,7 @@ function JournalView({ tasks }) {
                 }} />
                 {t.text}
                 {t.dueDate && (
-                  <span className="text-[10px] text-zinc-600 ml-auto">{fmtDate(t.dueDate)}</span>
+                  <span className="text-[10px] text-zinc-400 ml-auto">{fmtDate(t.dueDate, t.dueTime)}</span>
                 )}
               </div>
             ))}
@@ -1649,25 +2227,27 @@ function JournalView({ tasks }) {
       {/* Search */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 backdrop-blur-sm">
         <div className="relative mb-3">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search journal entries..."
-            className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-zinc-600 transition-colors"
+            aria-label="Search journal entries"
+            className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600 transition-colors"
           />
         </div>
         <div className="space-y-2 max-h-48 overflow-y-auto">
           {filteredEntries.slice(0, 10).map(entry => (
             <button
               key={entry._id}
-              onClick={() => setSelectedDate(entry.date)}
+              type="button"
+              onClick={() => gotoDate(entry.date)}
               className="w-full text-left p-3 rounded-xl hover:bg-zinc-800/60 transition-all"
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-zinc-500">{entry.date}</span>
+                <span className="text-xs text-zinc-400">{entry.date}</span>
                 {entry.mood && (
-                  <span className="text-[10px] text-zinc-600 bg-zinc-800/60 px-2 py-0.5 rounded-md">{entry.mood}</span>
+                  <span className="text-[10px] text-zinc-400 bg-zinc-800/60 px-2 py-0.5 rounded-md">{entry.mood}</span>
                 )}
               </div>
               <p className="text-sm text-zinc-400 truncate">{entry.content || 'Empty entry'}</p>
@@ -1678,16 +2258,25 @@ function JournalView({ tasks }) {
 
       {/* Toast */}
       <AnimatePresence>
-        {showToast && (
+        {journalToast && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
           >
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
-              <Check size={14} className="text-white/80" />
-              <span className="text-sm text-zinc-300">{showToast}</span>
+            <div role="alert" className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
+              <AlertCircle size={14} className="text-red-400" />
+              <span className="text-sm text-zinc-300">{journalToast.message}</span>
+              {journalToast.onAction && (
+                <button
+                  type="button"
+                  onClick={() => { const fn = journalToast.onAction; setJournalToast(null); fn() }}
+                  className="ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+                >
+                  {journalToast.actionLabel || 'Undo'}
+                </button>
+              )}
             </div>
           </motion.div>
         )}
@@ -1695,9 +2284,6 @@ function JournalView({ tasks }) {
     </motion.div>
   )
 }
-
-// Need these for the JournalView
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
@@ -1711,7 +2297,7 @@ const TaskItem = memo(function TaskItem({
   const project = projects.find(p => p._id === task.projectId)
   const subtaskDone = task.subtasks.filter(s => s.done).length
   const subtaskTotal = task.subtasks.length
-  const overdue = !task.done && isOverdue(task.dueDate)
+  const overdue = !task.done && isOverdue(task.dueDate, task.dueTime)
 
   return (
     <div
@@ -1723,8 +2309,7 @@ const TaskItem = memo(function TaskItem({
              !task.done && task.priority === 'low' ? { borderLeftColor: PRIORITY_CONFIG.low.color + '22', borderLeftWidth: '2px' } : {}}
     >
       <div className="flex items-start gap-3 p-4">
-        <button
-          onClick={onToggle}
+        <button type="button" onClick={onToggle} aria-label={task.done ? `Reopen ${task.text}` : `Complete ${task.text}`} aria-pressed={task.done}
           className={`mt-0.5 w-[18px] h-[18px] rounded-lg border-[1.5px] flex-shrink-0 flex items-center justify-center transition-all ${
             task.done
               ? 'bg-white/20 border-white/30'
@@ -1748,7 +2333,7 @@ const TaskItem = memo(function TaskItem({
             ) : (
               <span
                 className={`text-sm leading-snug cursor-pointer transition-colors ${
-                  task.done ? 'text-zinc-600 line-through' : 'text-white hover:text-zinc-300'
+                  task.done ? 'text-zinc-400 line-through' : 'text-white hover:text-zinc-300'
                 }`}
                 onDoubleClick={onEdit}
               >
@@ -1763,49 +2348,49 @@ const TaskItem = memo(function TaskItem({
             </span>
 
             {project && (
-              <span className="flex items-center gap-1 text-[10px] text-zinc-500">
+              <span className="flex items-center gap-1 text-[10px] text-zinc-400">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: project.color }} />
                 {project.name}
               </span>
             )}
 
             {task.dueDate && (
-              <span className={`flex items-center gap-1 text-[10px] ${overdue ? 'text-red-400' : 'text-zinc-500'}`}>
+              <span className={`flex items-center gap-1 text-[10px] ${overdue ? 'text-red-400' : 'text-zinc-400'}`}>
                 <Calendar size={10} />
-                {fmtDate(task.dueDate)}
+                {fmtDate(task.dueDate, task.dueTime)}
               </span>
             )}
 
             {task.tags.slice(0, 2).map(tag => (
-              <span key={tag} className="flex items-center gap-0.5 text-[10px] text-zinc-500 bg-zinc-800/40 px-1.5 py-0.5 rounded-md">
+              <span key={tag} className="flex items-center gap-0.5 text-[10px] text-zinc-400 bg-zinc-800/40 px-1.5 py-0.5 rounded-md">
                 <Hash size={8} />{tag}
               </span>
             ))}
             {task.tags.length > 2 && (
-              <span className="text-[10px] text-zinc-600">+{task.tags.length - 2}</span>
+              <span className="text-[10px] text-zinc-400">+{task.tags.length - 2}</span>
             )}
 
             {subtaskTotal > 0 && (
-              <span className="flex items-center gap-1 text-[10px] text-zinc-500">
+              <span className="flex items-center gap-1 text-[10px] text-zinc-400">
                 <ListChecks size={10} />
                 {subtaskDone}/{subtaskTotal}
               </span>
             )}
 
             {task.notes && (
-              <FileText size={10} className="text-zinc-600" />
+              <FileText size={10} className="text-zinc-400" />
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onDetail} className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/60 transition-all" title="Edit details">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button type="button" onClick={onDetail} aria-label="Edit details" className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/60 transition-all" title="Edit details">
             <Pencil size={13} />
           </button>
-          <button onClick={onStartPomodoro} className="p-1.5 rounded-lg text-zinc-600 hover:text-orange-400 hover:bg-orange-400/10 transition-all" title="Start Pomodoro">
+          <button type="button" onClick={onStartPomodoro} aria-label="Start Pomodoro" className="p-1.5 rounded-lg text-zinc-400 hover:text-orange-400 hover:bg-orange-400/10 transition-all" title="Start Pomodoro">
             <Flame size={13} />
           </button>
-          <button onClick={onDelete} className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-all" title="Delete">
+          <button type="button" onClick={onDelete} aria-label="Delete task" className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-400/10 transition-all" title="Delete">
             <Trash2 size={13} />
           </button>
         </div>
@@ -1820,7 +2405,7 @@ function AddSubtaskInline({ onAdd }) {
 
   if (!adding) {
     return (
-      <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors mt-1">
+      <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors mt-1">
         <Plus size={12} /> Add subtask
       </button>
     )
@@ -1837,7 +2422,7 @@ function AddSubtaskInline({ onAdd }) {
         }}
         onBlur={() => { if (text.trim()) onAdd(text); setText(''); setAdding(false) }}
         placeholder="Subtask..."
-        className="flex-1 bg-zinc-950/40 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+        className="flex-1 bg-zinc-950/40 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600"
         autoFocus
       />
     </div>
@@ -1850,7 +2435,7 @@ function AddTagInline({ currentTags, onAdd }) {
 
   if (!adding) {
     return (
-      <button onClick={() => setAdding(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-zinc-600 border border-dashed border-zinc-800 hover:border-zinc-700 hover:text-zinc-400 transition-all">
+      <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-zinc-400 border border-dashed border-zinc-800 hover:border-zinc-700 hover:text-white transition-all">
         <Plus size={10} /> tag
       </button>
     )
@@ -1868,7 +2453,7 @@ function AddTagInline({ currentTags, onAdd }) {
       }}
       onBlur={() => { setText(''); setAdding(false) }}
       placeholder="tag name"
-      className="w-20 bg-zinc-950/40 border border-zinc-800 rounded-lg px-2 py-1 text-[10px] text-white placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+      className="w-20 bg-zinc-950/40 border border-zinc-800 rounded-lg px-2 py-1 text-[10px] text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600"
       autoFocus
     />
   )
@@ -1893,8 +2478,9 @@ class ErrorBoundary extends Component {
               <AlertCircle size={24} className="text-red-400" />
             </div>
             <h2 className="text-lg font-medium mb-2">Something went wrong</h2>
-            <p className="text-sm text-zinc-500 mb-6">Try refreshing the page. If the problem persists, clear your browser cache.</p>
+            <p className="text-sm text-zinc-400 mb-6">Try refreshing the page. If the problem persists, clear your browser cache.</p>
             <button
+              type="button"
               onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 transition-colors"
             >
@@ -1922,7 +2508,7 @@ function ProtectedApp() {
           <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)] animate-pulse">
             <Activity size={18} className="text-zinc-300" strokeWidth={1.5} />
           </div>
-          <p className="text-sm text-zinc-600">Loading...</p>
+          <p className="text-sm text-zinc-400">Loading...</p>
         </div>
       </div>
     )
@@ -1943,14 +2529,16 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/sign-in/*" element={<SignInPage />} />
-        <Route path="/sign-up/*" element={<SignUpPage />} />
-        <Route path="/app" element={<ProtectedApp />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/sign-in/*" element={<SignInPage />} />
+            <Route path="/sign-up/*" element={<SignUpPage />} />
+            <Route path="/app" element={<ProtectedApp />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
     </ErrorBoundary>
   )
 }

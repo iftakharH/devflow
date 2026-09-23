@@ -32,7 +32,7 @@ export default function SignInPage() {
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm shadow-2xl">
           <div className="text-center mb-6">
             <h2 className="text-lg font-medium text-white mb-1">Welcome back</h2>
-            <p className="text-sm text-zinc-500">Sign in to your account</p>
+            <p className="text-sm text-zinc-400">Sign in to your account</p>
           </div>
 
           <SignIn
@@ -44,13 +44,13 @@ export default function SignInPage() {
                 rootBox: 'mx-auto',
                 card: 'bg-transparent border-0 shadow-none',
                 headerTitle: 'text-white',
-                headerSubtitle: 'text-zinc-500',
+                headerSubtitle: 'text-zinc-400',
                 socialButtonsBlockButton: 'bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:bg-zinc-800',
                 socialButtonsBlockButtonText: 'text-zinc-300',
                 dividerLine: 'bg-zinc-800',
-                dividerText: 'text-zinc-600',
-                formFieldLabel: 'text-zinc-500',
-                formFieldInput: 'bg-zinc-950/80 border border-zinc-800 text-white placeholder:text-zinc-600',
+                dividerText: 'text-zinc-400',
+                formFieldLabel: 'text-zinc-400',
+                formFieldInput: 'bg-zinc-950/80 border border-zinc-800 text-white placeholder:text-zinc-400',
                 formButtonPrimary: 'bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)]',
                 footerActionLink: 'text-zinc-400 hover:text-white',
                 identityPreviewEditButton: 'text-zinc-400',
@@ -59,7 +59,7 @@ export default function SignInPage() {
           />
         </div>
 
-        <p className="text-center mt-6 text-xs text-zinc-600">
+        <p className="text-center mt-6 text-xs text-zinc-400">
           Don&apos;t have an account?{' '}
           <Link to="/sign-up" className="text-zinc-400 hover:text-white transition-colors">
             Sign up

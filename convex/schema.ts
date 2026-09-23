@@ -25,7 +25,8 @@ export default defineSchema({
     done: v.boolean(),
     projectId: v.optional(v.string()),
     priority: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-    dueDate: v.optional(v.string()),
+    dueDate: v.optional(v.union(v.string(), v.null())),
+    dueTime: v.optional(v.union(v.string(), v.null())),
     tags: v.array(v.string()),
     subtasks: v.array(v.object({
       id: v.string(),

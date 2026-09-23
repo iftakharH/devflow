@@ -28,7 +28,7 @@ export const getByDate = query({
       .withIndex("by_user_date", (q) =>
         q.eq("userId", identity.subject).eq("date", args.date)
       )
-      .unique();
+      .first();
   },
 });
 
@@ -64,12 +64,14 @@ export const create = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const existing = await ctx.db
+    const matches = await ctx.db
       .query("journal")
       .withIndex("by_user_date", (q) =>
         q.eq("userId", identity.subject).eq("date", args.date)
       )
-      .unique();
+      .take(2);
+
+    const existing = matches[0];
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -77,6 +79,9 @@ export const create = mutation({
         mood: args.mood,
         taskIds: args.taskIds ?? existing.taskIds,
       });
+      for (const dup of matches.slice(1)) {
+        await ctx.db.delete(dup._id);
+      }
       return existing._id;
     }
 

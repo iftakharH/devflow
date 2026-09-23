@@ -19,8 +19,15 @@ export const create = mutation({
     text: v.string(),
     projectId: v.optional(v.string()),
     priority: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-    dueDate: v.optional(v.string()),
+    dueDate: v.optional(v.union(v.string(), v.null())),
+    dueTime: v.optional(v.union(v.string(), v.null())),
     tags: v.array(v.string()),
+    subtasks: v.optional(v.array(v.object({
+      id: v.string(),
+      text: v.string(),
+      done: v.boolean(),
+    }))),
+    notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -32,10 +39,11 @@ export const create = mutation({
       done: false,
       projectId: args.projectId,
       priority: args.priority,
-      dueDate: args.dueDate,
+      dueDate: args.dueDate ?? undefined,
+      dueTime: args.dueTime ?? undefined,
       tags: args.tags,
-      subtasks: [],
-      notes: "",
+      subtasks: args.subtasks ?? [],
+      notes: args.notes ?? "",
     });
 
     await ctx.db.insert("activityLog", {
@@ -56,7 +64,8 @@ export const update = mutation({
     done: v.optional(v.boolean()),
     projectId: v.optional(v.string()),
     priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
-    dueDate: v.optional(v.string()),
+    dueDate: v.optional(v.union(v.string(), v.null())),
+    dueTime: v.optional(v.union(v.string(), v.null())),
     tags: v.optional(v.array(v.string())),
     subtasks: v.optional(v.array(v.object({
       id: v.string(),
@@ -78,7 +87,8 @@ export const update = mutation({
     if (updates.text !== undefined) patchData.text = updates.text;
     if (updates.projectId !== undefined) patchData.projectId = updates.projectId;
     if (updates.priority !== undefined) patchData.priority = updates.priority;
-    if (updates.dueDate !== undefined) patchData.dueDate = updates.dueDate;
+    if (updates.dueDate !== undefined) patchData.dueDate = updates.dueDate === null ? null : updates.dueDate;
+    if (updates.dueTime !== undefined) patchData.dueTime = updates.dueTime === null ? null : updates.dueTime;
     if (updates.tags !== undefined) patchData.tags = updates.tags;
     if (updates.subtasks !== undefined) patchData.subtasks = updates.subtasks;
     if (updates.notes !== undefined) patchData.notes = updates.notes;
