@@ -1,17 +1,9 @@
-import { SignUp, useUser } from '@clerk/react'
+import { SignUp } from '@clerk/react'
 import { motion } from 'framer-motion'
 import { Activity } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 
 export default function SignUpPage() {
-  const { isLoaded, isSignedIn } = useUser()
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    if (isLoaded && isSignedIn) navigate('/app', { replace: true })
-  }, [isLoaded, isSignedIn, navigate])
-
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans flex items-center justify-center p-4">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -40,6 +32,8 @@ export default function SignUpPage() {
           <SignUp
             routing="path"
             path="/sign-up"
+            afterSignUpUrl="/app"
+            signUpForceRedirectUrl="/app"
             appearance={{
               elements: {
                 rootBox: 'mx-auto',

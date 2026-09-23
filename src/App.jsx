@@ -154,8 +154,17 @@ function AppContent() {
     }
   }, [user, syncUser, seedProjects])
 
+  // ─── Loading timeout ────────────────────────────────────
+  const [loadTimeout, setLoadTimeout] = useState(false)
+  useEffect(() => {
+    if (convexTasks === undefined || convexProjects === undefined) {
+      const timer = setTimeout(() => setLoadTimeout(true), 10000)
+      return () => clearTimeout(timer)
+    }
+  }, [convexTasks, convexProjects])
+
   // ─── Local state ───────────────────────────────────────
-  const dataLoading = convexTasks === undefined || convexProjects === undefined
+  const dataLoading = (convexTasks === undefined || convexProjects === undefined) && !loadTimeout
   const tasks = useMemo(() => convexTasks ?? [], [convexTasks])
   const projects = useMemo(() => convexProjects ?? [], [convexProjects])
 
@@ -488,7 +497,7 @@ function AppContent() {
   }, [detailTaskId, startPomodoro, clerk])
 
   // ─── Loading state ─────────────────────────────────────
-  if (dataLoading) {
+  if (dataLoading || loadTimeout) {
     return (
       <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
         <motion.div
@@ -499,7 +508,20 @@ function AppContent() {
           <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)] animate-pulse">
             <Activity size={18} className="text-zinc-300" strokeWidth={1.5} />
           </div>
-          <p className="text-sm text-zinc-600">Loading DevFlow...</p>
+          {loadTimeout ? (
+            <>
+              <p className="text-sm text-zinc-400">Taking longer than expected...</p>
+              <p className="text-xs text-zinc-600">Check your connection and try again</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 transition-colors"
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <p className="text-sm text-zinc-400">Loading DevFlow...</p>
+          )}
         </motion.div>
       </div>
     )
