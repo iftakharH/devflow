@@ -12,9 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Convex generated
-convex/_generated
-
 # Environment
 .env
 .env.local
