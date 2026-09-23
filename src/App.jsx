@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion, LayoutGroup } from 'framer-motion'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../convex/_generated/api'
-import { Authenticated, Unauthenticated, AuthLoading } from 'convex/react'
 import { useUser, useClerk } from '@clerk/react'
 import {
   Activity, Plus, Search, Trash2, Pencil, Check, Calendar,
@@ -1910,6 +1909,33 @@ class ErrorBoundary extends Component {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PROTECTED APP ROUTE
+// ═══════════════════════════════════════════════════════════════════
+
+function ProtectedApp() {
+  const { isLoaded, isSignedIn } = useUser()
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)] animate-pulse">
+            <Activity size={18} className="text-zinc-300" strokeWidth={1.5} />
+          </div>
+          <p className="text-sm text-zinc-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isSignedIn) {
+    return <Navigate to="/sign-in" replace />
+  }
+
+  return <AppContent />
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ROOT APP WITH ROUTING
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1921,26 +1947,7 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/sign-in/*" element={<SignInPage />} />
         <Route path="/sign-up/*" element={<SignUpPage />} />
-        <Route path="/app" element={
-          <>
-            <AuthLoading>
-              <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-zinc-800 flex items-center justify-center shadow-[0_0_20px_-6px_rgba(255,255,255,0.15)] animate-pulse">
-                    <Activity size={18} className="text-zinc-300" strokeWidth={1.5} />
-                  </div>
-                  <p className="text-sm text-zinc-600">Loading...</p>
-                </div>
-              </div>
-            </AuthLoading>
-            <Unauthenticated>
-              <Navigate to="/sign-in" replace />
-            </Unauthenticated>
-            <Authenticated>
-              <AppContent />
-            </Authenticated>
-          </>
-        } />
+        <Route path="/app" element={<ProtectedApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -1,9 +1,15 @@
-import { SignIn } from '@clerk/react'
+import { SignIn, useUser } from '@clerk/react'
 import { motion } from 'framer-motion'
 import { Activity } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 
 export default function SignInPage() {
+  const { isLoaded, isSignedIn } = useUser()
+
+  if (isLoaded && isSignedIn) {
+    return <Navigate to="/app" replace />
+  }
+
   return (
     <div className="min-h-screen bg-[#09090b] text-white selection:bg-white/20 font-sans flex items-center justify-center p-4">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -32,7 +38,6 @@ export default function SignInPage() {
           <SignIn
             routing="path"
             path="/sign-in"
-            afterSignInUrl="/app"
             signInForceRedirectUrl="/app"
             appearance={{
               elements: {
