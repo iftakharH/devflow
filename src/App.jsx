@@ -397,6 +397,8 @@ function AppContent() {
   const [pomodoroActive, setPomodoroActive] = useState(false)
   const [pomodoroTaskId, setPomodoroTaskId] = useState(null)
   const [newPriority, setNewPriority] = useState('medium')
+  const [newDueDate, setNewDueDate] = useState(null)
+  const [newDueTime, setNewDueTime] = useState(null)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
@@ -408,6 +410,7 @@ function AppContent() {
   const editInputRef = useRef(null)
   const toastTimerRef = useRef(null)
   const pendingRef = useRef(new Set())
+  const pendingAtRef = useRef({})
 
   // ─── Derived State ─────────────────────────────────────
   const detailTask = useMemo(() =>
@@ -478,9 +481,10 @@ function AppContent() {
 
   // ─── Toast ─────────────────────────────────────────────
   const showToast = useCallback((message, opts = {}) => {
-    setToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction })
+    setToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction, isError: !!opts.isError })
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setToast(null), opts.onAction ? 5000 : 2000)
+    const duration = opts.duration ?? (opts.onAction ? 5000 : opts.isError ? 4000 : 2000)
+    toastTimerRef.current = setTimeout(() => setToast(null), duration)
   }, [])
 
   const allTags = useMemo(() => {
@@ -491,10 +495,17 @@ function AppContent() {
 
   // ─── Task Handlers ─────────────────────────────────────
   const addTask = useCallback(async () => {
-    if (!input.trim() || pendingRef.current.has('add-task')) return
-    pendingRef.current.add('add-task')
+    if (!input.trim()) return
+    const pendKey = 'add-task'
+    if (pendingRef.current.has(pendKey)) {
+      const startedAt = pendingAtRef.current[pendKey] || 0
+      if (Date.now() - startedAt < 8000) return
+      pendingRef.current.delete(pendKey)
+    }
+    pendingRef.current.add(pendKey)
+    pendingAtRef.current[pendKey] = Date.now()
     try {
-      const date = parseNaturalDate(input)
+      const nlpDate = parseNaturalDate(input)
       const priority = parsePriority(input) || newPriority
       const tags = parseTags(input)
       const text = stripParsed(input) || input.trim()
@@ -502,17 +513,23 @@ function AppContent() {
         text,
         projectId: activeProject || undefined,
         priority,
-        dueDate: date ?? undefined,
+        dueDate: newDueDate ?? nlpDate ?? undefined,
+        dueTime: newDueTime ?? undefined,
         tags,
       })
       setInput('')
+      setNewDueDate(null)
+      setNewDueTime(null)
       showToast('Task created')
-    } catch {
-      showToast('Failed to create task')
+    } catch (err) {
+      console.error('Failed to create task', err)
+      const detail = err?.message ? `: ${String(err.message).slice(0, 120)}` : ''
+      showToast(`Failed to create task${detail}`, { isError: true })
     } finally {
-      pendingRef.current.delete('add-task')
+      pendingRef.current.delete(pendKey)
+      delete pendingAtRef.current[pendKey]
     }
-  }, [input, newPriority, activeProject, createTask, showToast])
+  }, [input, newPriority, newDueDate, newDueTime, activeProject, createTask, showToast])
 
   const toggleTask = useCallback(async (id) => {
     const task = tasks.find(t => t._id === id)
@@ -1204,7 +1221,14 @@ function AppContent() {
                 {input && (
                   <div className="flex items-center gap-2 mt-2 px-1 flex-wrap">
                     <PriorityDropdown value={newPriority} onChange={setNewPriority} />
-                    {parseNaturalDate(input) && (
+                    <DateTimePicker
+                      compact
+                      date={newDueDate}
+                      time={newDueTime}
+                      onChange={(d, t) => { setNewDueDate(d); setNewDueTime(t ?? null) }}
+                      onClear={() => { setNewDueDate(null); setNewDueTime(null) }}
+                    />
+                    {!newDueDate && parseNaturalDate(input) && (
                       <span className="flex items-center gap-1 text-[10px] text-zinc-400">
                         <Calendar size={10} />
                         {fmtDate(parseNaturalDate(input))}
@@ -1363,7 +1387,7 @@ function AppContent() {
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ type: 'spring', stiffness: 300, damping: 26 }}
               onClick={e => e.stopPropagation()}
-              className="relative w-full max-w-lg bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden max-h-[85vh] overflow-y-auto"
+              className="relative w-full max-w-lg bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto overflow-x-visible"
             >
               <div className="flex items-center justify-between p-5 pb-0">
                 <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">Task Details</span>
@@ -1742,8 +1766,10 @@ function AppContent() {
             transition={{ type: 'spring', stiffness: 400, damping: 26 }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
           >
-            <div role="status" className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
-              <Check size={14} className="text-white/80" />
+            <div role={toast.isError ? 'alert' : 'status'} className={`flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border rounded-2xl shadow-2xl backdrop-blur-xl ${toast.isError ? 'border-red-400/40' : 'border-zinc-800'}`}>
+              {toast.isError
+                ? <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+                : <Check size={14} className="text-white/80" />}
               <span className="text-sm text-zinc-300">{toast.message}</span>
               {toast.onAction && (
                 <button
@@ -1985,9 +2011,10 @@ function JournalView({ tasks }) {
   }, [content, mood])
 
   const flash = useCallback((message, opts = {}) => {
-    setJournalToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction })
+    setJournalToast({ message, actionLabel: opts.actionLabel, onAction: opts.onAction, isError: !!opts.isError })
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setJournalToast(null), opts.onAction ? 5000 : 2000)
+    const duration = opts.duration ?? (opts.onAction ? 5000 : opts.isError ? 4000 : 2000)
+    toastTimerRef.current = setTimeout(() => setJournalToast(null), duration)
   }, [])
 
   useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }, [])
@@ -2008,9 +2035,10 @@ function JournalView({ tasks }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate])
 
-  // Hydrate when query resolves for the current date — skip if user edited
+  // Hydrate when query resolves for the current date — never clobber in-progress edits
   useEffect(() => {
-    if (dirty || hydratedForRef.current !== selectedDate) return
+    if (hydratedForRef.current !== selectedDate) return
+    if (dirty || contentRef.current.trim() || moodRef.current) return
     /* eslint-disable react-hooks/set-state-in-effect */
     if (getJournalByDate) {
       setContent(getJournalByDate.content || '')
@@ -2022,6 +2050,10 @@ function JournalView({ tasks }) {
     /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getJournalByDate])
+
+  const serverContent = getJournalByDate ? (getJournalByDate.content || '') : ''
+  const serverMood = getJournalByDate ? (getJournalByDate.mood || '') : ''
+  const effectiveDirty = dirty || content !== serverContent || mood !== serverMood
 
   const handleSave = useCallback(async () => {
     if (saving) return
@@ -2037,8 +2069,10 @@ function JournalView({ tasks }) {
         setDirty(false)
       }
       flash('Journal saved')
-    } catch {
-      flash('Failed to save journal')
+    } catch (err) {
+      console.error('Failed to save journal', err)
+      const detail = err?.message ? `: ${String(err.message).slice(0, 120)}` : ''
+      flash(`Failed to save journal${detail}`, { isError: true })
     } finally {
       setSaving(false)
     }
@@ -2168,7 +2202,7 @@ function JournalView({ tasks }) {
               disabled={saving}
               className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+              {saving ? 'Saving…' : effectiveDirty ? 'Save' : 'Saved'}
             </button>
           </div>
         </div>
@@ -2265,8 +2299,10 @@ function JournalView({ tasks }) {
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
           >
-            <div role="alert" className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-xl">
-              <AlertCircle size={14} className="text-red-400" />
+            <div role={journalToast.isError ? 'alert' : 'status'} className={`flex items-center gap-2 px-4 py-2.5 bg-zinc-900/95 border rounded-2xl shadow-2xl backdrop-blur-xl ${journalToast.isError ? 'border-red-400/40' : 'border-zinc-800'}`}>
+              {journalToast.isError
+                ? <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+                : <Check size={14} className="text-white/80" />}
               <span className="text-sm text-zinc-300">{journalToast.message}</span>
               {journalToast.onAction && (
                 <button
