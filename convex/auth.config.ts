@@ -1,9 +1,17 @@
 import { AuthConfig } from "convex/server";
 
+const clerkFrontendApiUrl = process.env.CLERK_FRONTEND_API_URL;
+
+if (!clerkFrontendApiUrl) {
+  throw new Error(
+    "Set CLERK_FRONTEND_API_URL in the Convex deployment environment before deploying."
+  );
+}
+
 export default {
   providers: [
     {
-      domain: process.env.CLERK_FRONTEND_API_URL || "https://lasting-boar-1343.clerk.accounts.dev",
+      domain: clerkFrontendApiUrl,
       applicationID: "convex",
     },
   ],

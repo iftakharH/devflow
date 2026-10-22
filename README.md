@@ -64,8 +64,7 @@ Browser (React SPA)
                                                 └── workspace role checks
 
 Vercel
-  ├── static assets (dist/)
-  └── /__clerk/* proxy ──► Clerk frontend API
+  └── static assets (dist/) served as an SPA
 ```
 
 - Every Convex query and mutation resolves the Clerk identity server-side.
@@ -177,8 +176,28 @@ Required Vercel environment variables:
 - `VITE_CONVEX_URL`
 - `VITE_CLERK_PUBLISHABLE_KEY`
 
-`vercel.json` rewrites `/__clerk/*` to the Clerk frontend API and serves the SPA for
-all non-asset routes.
+`vercel.json` serves the SPA for all non-asset routes. If you configure a Clerk proxy
+URL, add a rewrite for that path in `vercel.json`.
+
+### Production Clerk checklist
+
+Clerk development instances are rate-limited, use `pk_test` keys, and log a browser
+warning. A Clerk production instance requires a domain you control — a
+`*.vercel.app` domain cannot host one because Clerk needs DNS records.
+
+1. Own a domain you can add DNS records to.
+2. In Clerk, create a production instance, add `clerk.yourdomain.com`, and publish the
+   CNAME records Clerk provides.
+3. In the production instance, create the JWT template `convex` with application ID
+   `convex`. Templates are per instance, so the development template does not carry over.
+4. In Vercel production environment variables, set:
+   - `VITE_CLERK_PUBLISHABLE_KEY` to the production `pk_live_...` key
+   - `CLERK_FRONTEND_API_URL` to the production frontend API URL
+5. In the Convex production deployment, set `CLERK_FRONTEND_API_URL` to the same value.
+6. Redeploy Convex and Vercel, then sign in to verify.
+
+`convex/auth.config.ts` reads `CLERK_FRONTEND_API_URL` and fails the deploy when it is
+missing, so a production deployment cannot silently fall back to a development instance.
 
 ## Project structure
 
