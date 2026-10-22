@@ -353,17 +353,23 @@ function AppContent() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => {
     try { return localStorage.getItem('devflow-active-workspace') } catch { return null }
   })
+  const workspaceList = useQuery(api.workspace.list)
+  const activeWorkspace = useMemo(() => (
+    activeWorkspaceId && workspaceList
+      ? workspaceList.find(w => w._id === activeWorkspaceId) ?? null
+      : null
+  ), [activeWorkspaceId, workspaceList])
+  const resolvedWorkspaceId = activeWorkspace?._id ?? null
   const taskQueryArgs = useMemo(
-    () => (activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
-    [activeWorkspaceId]
+    () => (resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+    [resolvedWorkspaceId]
   )
   const projectQueryArgs = useMemo(
-    () => (activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
-    [activeWorkspaceId]
+    () => (resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+    [resolvedWorkspaceId]
   )
 
   // ─── Convex Data ───────────────────────────────────────
-  const workspaceList = useQuery(api.workspace.list)
   const convexTasks = useQuery(api.tasks.list, taskQueryArgs)
   const convexProjects = useQuery(api.projects.list, projectQueryArgs)
   const createTask = useMutation(api.tasks.create)
@@ -436,12 +442,6 @@ function AppContent() {
   const inputRef = useRef(null)
 
   // ─── Workspace context ─────────────────────────────────
-  const activeWorkspace = useMemo(() => (
-    activeWorkspaceId && workspaceList
-      ? workspaceList.find(w => w._id === activeWorkspaceId) ?? null
-      : null
-  ), [activeWorkspaceId, workspaceList])
-
   useEffect(() => {
     if (activeWorkspaceId && workspaceList !== undefined && !activeWorkspace) {
       /* eslint-disable react-hooks/set-state-in-effect */
@@ -459,7 +459,7 @@ function AppContent() {
 
   const membersData = useQuery(
     api.workspace.getMembers,
-    activeWorkspaceId ? { workspaceId: activeWorkspaceId } : 'skip'
+    resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : 'skip'
   )
 
   const searchRef = useRef(null)
@@ -572,7 +572,7 @@ function AppContent() {
         dueDate: newDueDate ?? nlpDate ?? undefined,
         dueTime: newDueTime ?? undefined,
         tags,
-        workspaceId: activeWorkspaceId || undefined,
+        workspaceId: resolvedWorkspaceId || undefined,
       })
       setInput('')
       setNewDueDate(null)
@@ -586,7 +586,7 @@ function AppContent() {
       pendingRef.current.delete(pendKey)
       delete pendingAtRef.current[pendKey]
     }
-  }, [input, newPriority, newDueDate, newDueTime, activeProject, activeWorkspaceId, createTask, showToast])
+  }, [input, newPriority, newDueDate, newDueTime, activeProject, resolvedWorkspaceId, createTask, showToast])
 
   const toggleTask = useCallback(async (id) => {
     const task = tasks.find(t => t._id === id)
@@ -714,7 +714,7 @@ function AppContent() {
       await createProject({
         name: newProjectName.trim(),
         color: newProjectColor,
-        workspaceId: activeWorkspaceId || undefined,
+        workspaceId: resolvedWorkspaceId || undefined,
       })
       setNewProjectName('')
       setShowAddProject(false)
@@ -724,7 +724,7 @@ function AppContent() {
     } finally {
       pendingRef.current.delete('add-project')
     }
-  }, [newProjectName, newProjectColor, activeWorkspaceId, createProject, showToast])
+  }, [newProjectName, newProjectColor, resolvedWorkspaceId, createProject, showToast])
 
   const deleteProject = useCallback(async (id) => {
     if (pendingRef.current.has('del-project-' + id)) return
@@ -785,7 +785,7 @@ function AppContent() {
           tags: t.tags ?? [],
           subtasks: Array.isArray(t.subtasks) && t.subtasks.length ? t.subtasks : undefined,
           notes: t.notes ?? undefined,
-          workspaceId: activeWorkspaceId || undefined,
+          workspaceId: resolvedWorkspaceId || undefined,
         })
       }
       setShowImportModal(false)
@@ -796,7 +796,7 @@ function AppContent() {
     } finally {
       pendingRef.current.delete('import')
     }
-  }, [importText, activeWorkspaceId, createTask, showToast])
+  }, [importText, resolvedWorkspaceId, createTask, showToast])
 
   const handleCopyJSON = useCallback(() => {
     try {
