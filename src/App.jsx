@@ -8,7 +8,8 @@ import {
   Activity, Plus, Search, Trash2, Pencil, Check, Calendar,
   ListChecks, FileText, X, Download, Upload, AlertCircle, Filter,
   Folder, Command, RotateCcw, CheckCircle2, Hash, Flame, Target, Copy,
-  LogOut, BookOpen, BarChart3, ChevronLeft, ChevronRight, ChevronDown
+  LogOut, BookOpen, BarChart3, ChevronLeft, ChevronRight, ChevronDown,
+  Users, UserPlus, Link2
 } from 'lucide-react'
 
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -348,9 +349,23 @@ function AppContent() {
   const { user } = useUser()
   const clerk = useClerk()
 
+  // ─── Active workspace ──────────────────────────────────
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => {
+    try { return localStorage.getItem('devflow-active-workspace') } catch { return null }
+  })
+  const taskQueryArgs = useMemo(
+    () => (activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
+    [activeWorkspaceId]
+  )
+  const projectQueryArgs = useMemo(
+    () => (activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
+    [activeWorkspaceId]
+  )
+
   // ─── Convex Data ───────────────────────────────────────
-  const convexTasks = useQuery(api.tasks.list)
-  const convexProjects = useQuery(api.projects.list)
+  const workspaceList = useQuery(api.workspace.list)
+  const convexTasks = useQuery(api.tasks.list, taskQueryArgs)
+  const convexProjects = useQuery(api.projects.list, projectQueryArgs)
   const createTask = useMutation(api.tasks.create)
   const updateTask = useMutation(api.tasks.update)
   const removeTask = useMutation(api.tasks.remove)
@@ -358,6 +373,13 @@ function AppContent() {
   const removeProject = useMutation(api.projects.remove)
   const syncUser = useMutation(api.users.syncUser)
   const seedProjects = useMutation(api.seed.seedDefaultProjects)
+  const createWorkspace = useMutation(api.workspace.create)
+  const renameWorkspace = useMutation(api.workspace.rename)
+  const joinWorkspace = useMutation(api.workspace.joinByCode)
+  const leaveWorkspace = useMutation(api.workspace.leave)
+  const deleteWorkspace = useMutation(api.workspace.remove)
+  const removeWorkspaceMember = useMutation(api.workspace.removeMember)
+  const regenerateInvite = useMutation(api.workspace.regenerateInvite)
 
   // ─── Sync Clerk user to Convex on mount ────────────────
   useEffect(() => {
@@ -402,10 +424,44 @@ function AppContent() {
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
-  const [activeView, setActiveView] = useState('tasks') // tasks | dashboard | journal | shared
+  const [activeView, setActiveView] = useState('tasks') // tasks | dashboard | journal
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false)
+  const [workspaceModal, setWorkspaceModal] = useState(null) // create | join | members
+  const [workspaceName, setWorkspaceName] = useState('')
+  const [inviteCodeInput, setInviteCodeInput] = useState('')
+  const [workspaceBusy, setWorkspaceBusy] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
 
   const inputRef = useRef(null)
+
+  // ─── Workspace context ─────────────────────────────────
+  const activeWorkspace = useMemo(() => (
+    activeWorkspaceId && workspaceList
+      ? workspaceList.find(w => w._id === activeWorkspaceId) ?? null
+      : null
+  ), [activeWorkspaceId, workspaceList])
+
+  useEffect(() => {
+    if (activeWorkspaceId && workspaceList !== undefined && !activeWorkspace) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setActiveWorkspaceId(null)
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
+  }, [activeWorkspaceId, workspaceList, activeWorkspace])
+
+  useEffect(() => {
+    try {
+      if (activeWorkspaceId) localStorage.setItem('devflow-active-workspace', activeWorkspaceId)
+      else localStorage.removeItem('devflow-active-workspace')
+    } catch { /* storage unavailable */ }
+  }, [activeWorkspaceId])
+
+  const membersData = useQuery(
+    api.workspace.getMembers,
+    activeWorkspaceId ? { workspaceId: activeWorkspaceId } : 'skip'
+  )
+
   const searchRef = useRef(null)
   const editInputRef = useRef(null)
   const toastTimerRef = useRef(null)
@@ -516,6 +572,7 @@ function AppContent() {
         dueDate: newDueDate ?? nlpDate ?? undefined,
         dueTime: newDueTime ?? undefined,
         tags,
+        workspaceId: activeWorkspaceId || undefined,
       })
       setInput('')
       setNewDueDate(null)
@@ -529,7 +586,7 @@ function AppContent() {
       pendingRef.current.delete(pendKey)
       delete pendingAtRef.current[pendKey]
     }
-  }, [input, newPriority, newDueDate, newDueTime, activeProject, createTask, showToast])
+  }, [input, newPriority, newDueDate, newDueTime, activeProject, activeWorkspaceId, createTask, showToast])
 
   const toggleTask = useCallback(async (id) => {
     const task = tasks.find(t => t._id === id)
@@ -657,6 +714,7 @@ function AppContent() {
       await createProject({
         name: newProjectName.trim(),
         color: newProjectColor,
+        workspaceId: activeWorkspaceId || undefined,
       })
       setNewProjectName('')
       setShowAddProject(false)
@@ -666,7 +724,7 @@ function AppContent() {
     } finally {
       pendingRef.current.delete('add-project')
     }
-  }, [newProjectName, newProjectColor, createProject, showToast])
+  }, [newProjectName, newProjectColor, activeWorkspaceId, createProject, showToast])
 
   const deleteProject = useCallback(async (id) => {
     if (pendingRef.current.has('del-project-' + id)) return
@@ -681,7 +739,7 @@ function AppContent() {
         actionLabel: 'Undo',
         onAction: async () => {
           try {
-            const newId = await createProject({ name: project.name, color: project.color, icon: project.icon })
+            const newId = await createProject({ name: project.name, color: project.color, icon: project.icon, workspaceId: project.workspaceId ?? undefined })
             await Promise.all(linkedTasks.map(t => updateTask({ id: t._id, projectId: newId })))
             showToast('Project restored')
           } catch {
@@ -727,6 +785,7 @@ function AppContent() {
           tags: t.tags ?? [],
           subtasks: Array.isArray(t.subtasks) && t.subtasks.length ? t.subtasks : undefined,
           notes: t.notes ?? undefined,
+          workspaceId: activeWorkspaceId || undefined,
         })
       }
       setShowImportModal(false)
@@ -737,7 +796,7 @@ function AppContent() {
     } finally {
       pendingRef.current.delete('import')
     }
-  }, [importText, createTask, showToast])
+  }, [importText, activeWorkspaceId, createTask, showToast])
 
   const handleCopyJSON = useCallback(() => {
     try {
@@ -755,6 +814,121 @@ function AppContent() {
       showToast('Sign out failed')
     }
   }, [clerk, showToast])
+
+  // ─── Workspace Handlers ────────────────────────────────
+  const switchWorkspace = useCallback((id) => {
+    setActiveWorkspaceId(id)
+    setShowWorkspaceMenu(false)
+    setActiveProject(null)
+    setFilterPriority(null)
+    setFilterStatus('active')
+    setSearch('')
+    setDetailTaskId(null)
+  }, [])
+
+  const handleCreateWorkspace = useCallback(async () => {
+    const name = workspaceName.trim()
+    if (!name || workspaceBusy) return
+    setWorkspaceBusy(true)
+    try {
+      const id = await createWorkspace({ name })
+      setWorkspaceName('')
+      setWorkspaceModal(null)
+      setActiveWorkspaceId(id)
+      showToast('Workspace created')
+    } catch (err) {
+      const detail = err?.message ? `: ${String(err.message).slice(0, 80)}` : ''
+      showToast(`Failed to create workspace${detail}`, { isError: true })
+    } finally {
+      setWorkspaceBusy(false)
+    }
+  }, [workspaceName, workspaceBusy, createWorkspace, showToast])
+
+  const handleJoinWorkspace = useCallback(async () => {
+    const code = inviteCodeInput.trim().toUpperCase()
+    if (!code || workspaceBusy) return
+    setWorkspaceBusy(true)
+    try {
+      const id = await joinWorkspace({ inviteCode: code })
+      setInviteCodeInput('')
+      setWorkspaceModal(null)
+      setActiveWorkspaceId(id)
+      showToast('Joined workspace')
+    } catch (err) {
+      const detail = err?.message ? `: ${String(err.message).slice(0, 80)}` : ''
+      showToast(`Failed to join workspace${detail}`, { isError: true })
+    } finally {
+      setWorkspaceBusy(false)
+    }
+  }, [inviteCodeInput, workspaceBusy, joinWorkspace, showToast])
+
+  const handleRenameWorkspace = useCallback(async () => {
+    if (!activeWorkspaceId || !renameValue.trim() || workspaceBusy) return
+    setWorkspaceBusy(true)
+    try {
+      await renameWorkspace({ workspaceId: activeWorkspaceId, name: renameValue.trim() })
+      showToast('Workspace renamed')
+    } catch {
+      showToast('Failed to rename workspace', { isError: true })
+    } finally {
+      setWorkspaceBusy(false)
+    }
+  }, [activeWorkspaceId, renameValue, workspaceBusy, renameWorkspace, showToast])
+
+  const handleLeaveWorkspace = useCallback(async () => {
+    if (!activeWorkspaceId) return
+    try {
+      await leaveWorkspace({ workspaceId: activeWorkspaceId })
+      setWorkspaceModal(null)
+      setActiveWorkspaceId(null)
+      setShowWorkspaceMenu(false)
+      showToast('Left workspace')
+    } catch {
+      showToast('Failed to leave workspace', { isError: true })
+    }
+  }, [activeWorkspaceId, leaveWorkspace, showToast])
+
+  const handleDeleteWorkspace = useCallback(async () => {
+    if (!activeWorkspaceId) return
+    if (!window.confirm('Delete this workspace? Its tasks and projects will become personal.')) return
+    try {
+      await deleteWorkspace({ workspaceId: activeWorkspaceId })
+      setWorkspaceModal(null)
+      setActiveWorkspaceId(null)
+      setShowWorkspaceMenu(false)
+      showToast('Workspace deleted')
+    } catch {
+      showToast('Failed to delete workspace', { isError: true })
+    }
+  }, [activeWorkspaceId, deleteWorkspace, showToast])
+
+  const handleRemoveMember = useCallback(async (userId) => {
+    if (!activeWorkspaceId) return
+    try {
+      await removeWorkspaceMember({ workspaceId: activeWorkspaceId, userId })
+      showToast('Member removed')
+    } catch {
+      showToast('Failed to remove member', { isError: true })
+    }
+  }, [activeWorkspaceId, removeWorkspaceMember, showToast])
+
+  const handleRegenerateInvite = useCallback(async () => {
+    if (!activeWorkspaceId) return
+    try {
+      await regenerateInvite({ workspaceId: activeWorkspaceId })
+      showToast('Invite code regenerated')
+    } catch {
+      showToast('Failed to regenerate invite code', { isError: true })
+    }
+  }, [activeWorkspaceId, regenerateInvite, showToast])
+
+  const copyInviteCode = useCallback(() => {
+    const code = membersData?.workspace?.inviteCode
+    if (!code) return
+    navigator.clipboard.writeText(code)
+      .then(() => showToast('Invite code copied'))
+      .catch(() => showToast('Failed to copy invite code', { isError: true }))
+  }, [membersData, showToast])
 
   // ─── Pomodoro ──────────────────────────────────────────
   const startPomodoro = useCallback((taskId) => {
@@ -804,6 +978,8 @@ function AppContent() {
         setShowExportModal(false)
         setShowImportModal(false)
         setShowProfileMenu(false)
+        setShowWorkspaceMenu(false)
+        setWorkspaceModal(null)
       }
     }
     window.addEventListener('keydown', handler)
@@ -825,6 +1001,9 @@ function AppContent() {
     { id: 'completed', label: 'Show completed', icon: CheckCircle2 },
     { id: 'pomodoro', label: 'Start Pomodoro', icon: Flame },
     { id: 'project', label: 'Add project', icon: Folder },
+    { id: 'workspace-new', label: 'New workspace', icon: UserPlus },
+    { id: 'workspace-join', label: 'Join workspace', icon: Link2 },
+    { id: 'workspace-members', label: 'Workspace members', icon: Users },
     { id: 'export', label: 'Export data', icon: Download },
     { id: 'signout', label: 'Sign out', icon: LogOut },
   ]
@@ -841,11 +1020,19 @@ function AppContent() {
       case 'completed': setFilterStatus('done'); setActiveView('tasks'); break
       case 'pomodoro': startPomodoro(detailTaskId || null); break
       case 'project': setShowAddProject(true); break
+      case 'workspace-new': setWorkspaceModal('create'); break
+      case 'workspace-join': setWorkspaceModal('join'); break
+      case 'workspace-members':
+        if (activeWorkspaceId) {
+          setRenameValue(activeWorkspace?.name ?? '')
+          setWorkspaceModal('members')
+        }
+        break
       case 'export': setShowExportModal(true); break
       case 'signout': handleSignOut(); break
       default: break
     }
-  }, [detailTaskId, startPomodoro, handleSignOut])
+  }, [detailTaskId, startPomodoro, handleSignOut, activeWorkspaceId, activeWorkspace])
 
   // ─── Loading state ─────────────────────────────────────
   if (dataLoading || loadTimeout) {
@@ -900,6 +1087,96 @@ function AppContent() {
                 <Activity size={16} className="text-zinc-300" strokeWidth={1.5} />
               </div>
               <h1 className="text-lg font-medium tracking-tight">DevFlow</h1>
+
+              {/* Workspace switcher */}
+              <div className="relative ml-1">
+                <button
+                  type="button"
+                  onClick={() => setShowWorkspaceMenu(v => !v)}
+                  aria-label="Switch workspace"
+                  aria-expanded={showWorkspaceMenu}
+                  aria-haspopup="menu"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-300 hover:border-zinc-700 transition-all"
+                >
+                  <Users size={12} className="text-zinc-400" />
+                  <span className="max-w-[96px] sm:max-w-[140px] truncate">
+                    {activeWorkspace ? activeWorkspace.name : 'Personal'}
+                  </span>
+                  <ChevronDown size={12} className="text-zinc-500" />
+                </button>
+                {showWorkspaceMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowWorkspaceMenu(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                      className="absolute left-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                    >
+                      <div className="px-4 py-2.5 border-b border-zinc-800">
+                        <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Workspaces</p>
+                      </div>
+                      <div className="p-1.5">
+                        <button
+                          type="button"
+                          onClick={() => switchWorkspace(null)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-300 hover:bg-zinc-800/60 hover:text-white transition-all"
+                        >
+                          <span className="w-5 h-5 rounded-lg bg-white/[0.06] border border-zinc-800 flex items-center justify-center">
+                            <Activity size={10} className="text-zinc-400" />
+                          </span>
+                          <span className="flex-1 text-left">Personal</span>
+                          {!activeWorkspaceId && <Check size={12} className="text-white/70" />}
+                        </button>
+                        {(workspaceList ?? []).map(w => (
+                          <button
+                            key={w._id}
+                            type="button"
+                            onClick={() => switchWorkspace(w._id)}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-300 hover:bg-zinc-800/60 hover:text-white transition-all"
+                          >
+                            <span className="w-5 h-5 rounded-lg bg-white/[0.06] border border-zinc-800 flex items-center justify-center text-[9px] uppercase text-zinc-400">
+                              {w.name.slice(0, 1)}
+                            </span>
+                            <span className="flex-1 text-left truncate">{w.name}</span>
+                            <span className="text-[9px] text-zinc-500 uppercase tracking-wider">{w.role}</span>
+                            {activeWorkspaceId === w._id && <Check size={12} className="text-white/70" />}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="border-t border-zinc-800 p-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setShowWorkspaceMenu(false); setWorkspaceModal('create') }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-all"
+                        >
+                          <UserPlus size={12} /> New workspace
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowWorkspaceMenu(false); setWorkspaceModal('join') }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-all"
+                        >
+                          <Link2 size={12} /> Join with code
+                        </button>
+                        {activeWorkspace && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowWorkspaceMenu(false)
+                              setRenameValue(activeWorkspace.name)
+                              setWorkspaceModal('members')
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-all"
+                          >
+                            <Users size={12} /> Members &amp; invite
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {/* View tabs */}
@@ -982,7 +1259,7 @@ function AppContent() {
             </div>
           </div>
           <p className="text-xs text-zinc-400 uppercase tracking-[0.3em] mt-1">
-            {activeView === 'tasks' && 'Task management for developers'}
+            {activeView === 'tasks' && (activeWorkspace ? `Shared workspace · ${activeWorkspace.name}` : 'Task management for developers')}
             {activeView === 'dashboard' && 'Analytics & insights'}
             {activeView === 'journal' && 'Daily reflections'}
           </p>
@@ -1636,6 +1913,214 @@ function AppContent() {
                   </button>
                 ))}
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════════════════════════════════════════════════
+          WORKSPACE MODAL (create / join / members)
+          ═══════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {workspaceModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={() => setWorkspaceModal(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              workspaceModal === 'members' ? 'Workspace members'
+                : workspaceModal === 'create' ? 'Create workspace'
+                  : 'Join workspace'
+            }
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+              onClick={e => e.stopPropagation()}
+              className="relative w-full max-w-md bg-zinc-900/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-xl p-6 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-[0.3em]">
+                  {workspaceModal === 'create' && 'New Workspace'}
+                  {workspaceModal === 'join' && 'Join Workspace'}
+                  {workspaceModal === 'members' && 'Members & Invite'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceModal(null)}
+                  aria-label="Close dialog"
+                  className="p-1 rounded-xl hover:bg-zinc-800/60 transition-colors"
+                >
+                  <X size={14} className="text-zinc-400" />
+                </button>
+              </div>
+
+              {workspaceModal === 'create' && (
+                <>
+                  <p className="text-sm text-zinc-400 mb-3">
+                    Create a shared workspace for tasks and projects. Invite teammates with a code.
+                  </p>
+                  <input
+                    value={workspaceName}
+                    onChange={e => setWorkspaceName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleCreateWorkspace() }}
+                    placeholder="Workspace name"
+                    aria-label="Workspace name"
+                    className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600 mb-4"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateWorkspace}
+                    disabled={!workspaceName.trim() || workspaceBusy}
+                    className="w-full py-2.5 rounded-xl text-sm font-medium bg-white text-zinc-950 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {workspaceBusy ? 'Creating…' : 'Create workspace'}
+                  </button>
+                </>
+              )}
+
+              {workspaceModal === 'join' && (
+                <>
+                  <p className="text-sm text-zinc-400 mb-3">
+                    Enter the invite code shared by a workspace owner or admin.
+                  </p>
+                  <input
+                    value={inviteCodeInput}
+                    onChange={e => setInviteCodeInput(e.target.value.toUpperCase())}
+                    onKeyDown={e => { if (e.key === 'Enter') handleJoinWorkspace() }}
+                    placeholder="INVITE CODE"
+                    aria-label="Invite code"
+                    className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600 mb-4 font-mono tracking-widest"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleJoinWorkspace}
+                    disabled={!inviteCodeInput.trim() || workspaceBusy}
+                    className="w-full py-2.5 rounded-xl text-sm font-medium bg-white text-zinc-950 shadow-[0_0_40px_-12px_rgba(255,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {workspaceBusy ? 'Joining…' : 'Join workspace'}
+                  </button>
+                </>
+              )}
+
+              {workspaceModal === 'members' && activeWorkspace && (
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleRenameWorkspace() }}
+                      placeholder={activeWorkspace.name}
+                      aria-label="Workspace name"
+                      className="flex-1 bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-400 outline-none focus:border-zinc-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRenameWorkspace}
+                      disabled={workspaceBusy || !renameValue.trim() || renameValue.trim() === activeWorkspace.name}
+                      className="px-3 py-2 rounded-xl bg-white text-zinc-950 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Save
+                    </button>
+                  </div>
+
+                  <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 mb-4">
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2">Invite code</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-sm text-white font-mono tracking-widest">
+                        {membersData?.workspace?.inviteCode ?? '…'}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={copyInviteCode}
+                        aria-label="Copy invite code"
+                        className="p-2 rounded-xl bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:text-white transition-all"
+                      >
+                        <Copy size={12} />
+                      </button>
+                      {(membersData?.myRole === 'owner' || membersData?.myRole === 'admin') && (
+                        <button
+                          type="button"
+                          onClick={handleRegenerateInvite}
+                          aria-label="Regenerate invite code"
+                          className="p-2 rounded-xl bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:text-white transition-all"
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-2">
+                    Members {membersData?.members ? `(${membersData.members.length})` : ''}
+                  </p>
+                  <div className="space-y-1.5 mb-4">
+                    {(membersData?.members ?? []).map(member => (
+                      <div
+                        key={member.userId}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-950/40 border border-zinc-800/60"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-white/[0.06] border border-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 uppercase">
+                          {(member.userName || member.userEmail || '?').slice(0, 1)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-white truncate">
+                            {member.userName || 'Unknown'}
+                            {member.userId === user?.id ? ' (you)' : ''}
+                          </p>
+                          {member.userEmail && (
+                            <p className="text-[10px] text-zinc-500 truncate">{member.userEmail}</p>
+                          )}
+                        </div>
+                        <span className="text-[9px] uppercase tracking-wider text-zinc-400 bg-zinc-800/60 px-2 py-0.5 rounded-md">
+                          {member.role}
+                        </span>
+                        {member.userId !== user?.id && member.role !== 'owner' && (
+                          membersData?.myRole === 'owner'
+                          || (membersData?.myRole === 'admin' && member.role !== 'admin')
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member.userId)}
+                            aria-label={`Remove ${member.userName || 'member'}`}
+                            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {!membersData && (
+                      <p className="text-xs text-zinc-500">Loading members…</p>
+                    )}
+                  </div>
+
+                  {membersData?.myRole === 'owner' ? (
+                    <button
+                      type="button"
+                      onClick={handleDeleteWorkspace}
+                      className="w-full py-2.5 rounded-xl text-sm bg-red-400/10 border border-red-400/30 text-red-400 hover:bg-red-400/20 transition-all"
+                    >
+                      Delete workspace
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLeaveWorkspace}
+                      className="w-full py-2.5 rounded-xl text-sm bg-zinc-800/60 border border-zinc-700 text-zinc-300 hover:text-white transition-all"
+                    >
+                      Leave workspace
+                    </button>
+                  )}
+                </>
+              )}
             </motion.div>
           </motion.div>
         )}

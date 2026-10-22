@@ -1,16 +1,27 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireEditor, requireMembership } from "./authz";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { workspaceId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
 
-    return await ctx.db
+    if (args.workspaceId) {
+      await requireMembership(ctx, args.workspaceId, identity.subject);
+      return await ctx.db
+        .query("projects")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+        .collect();
+    }
+
+    const personal = await ctx.db
       .query("projects")
       .withIndex("by_user", (q) => q.eq("userId", identity.subject))
       .collect();
+
+    return personal.filter((project) => !project.workspaceId);
   },
 });
 
@@ -19,10 +30,15 @@ export const create = mutation({
     name: v.string(),
     color: v.string(),
     icon: v.optional(v.string()),
+    workspaceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
+
+    if (args.workspaceId) {
+      await requireEditor(ctx, args.workspaceId, identity.subject);
+    }
 
     const existing = await ctx.db
       .query("projects")
@@ -35,6 +51,7 @@ export const create = mutation({
       color: args.color,
       icon: args.icon ?? "Folder",
       order: existing.length,
+      workspaceId: args.workspaceId,
     });
   },
 });
@@ -52,7 +69,13 @@ export const update = mutation({
     if (!identity) throw new Error("Not authenticated");
 
     const project = await ctx.db.get(args.id);
-    if (!project || project.userId !== identity.subject) throw new Error("Not authorized");
+    if (!project) throw new Error("Project not found");
+
+    if (project.workspaceId) {
+      await requireEditor(ctx, project.workspaceId, identity.subject);
+    } else if (project.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
 
     const { id, ...updates } = args;
     const patchData: Record<string, unknown> = {};
@@ -72,17 +95,30 @@ export const remove = mutation({
     if (!identity) throw new Error("Not authenticated");
 
     const project = await ctx.db.get(args.id);
-    if (!project || project.userId !== identity.subject) throw new Error("Not authorized");
+    if (!project) throw new Error("Project not found");
 
-    const tasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_project", (q) =>
-        q.eq("userId", identity.subject).eq("projectId", args.id)
-      )
-      .collect();
+    if (project.workspaceId) {
+      await requireEditor(ctx, project.workspaceId, identity.subject);
+    } else if (project.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
 
-    for (const task of tasks) {
-      await ctx.db.patch(task._id, { projectId: undefined });
+    const linkedTasks = project.workspaceId
+      ? await ctx.db
+        .query("tasks")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", project.workspaceId))
+        .collect()
+      : await ctx.db
+        .query("tasks")
+        .withIndex("by_user_project", (q) =>
+          q.eq("userId", identity.subject).eq("projectId", args.id)
+        )
+        .collect();
+
+    for (const task of linkedTasks) {
+      if (task.projectId === args.id) {
+        await ctx.db.patch(task._id, { projectId: undefined });
+      }
     }
 
     await ctx.db.delete(args.id);

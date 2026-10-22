@@ -8,7 +8,7 @@
  * @module
  */
 
-import type * as analytics from "../analytics.js";
+import type * as authz from "../authz.js";
 import type * as journal from "../journal.js";
 import type * as projects from "../projects.js";
 import type * as seed from "../seed.js";
@@ -23,7 +23,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  analytics: typeof analytics;
+  authz: typeof authz;
   journal: typeof journal;
   projects: typeof projects;
   seed: typeof seed;

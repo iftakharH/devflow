@@ -1,16 +1,27 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireEditor, requireMembership } from "./authz";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { workspaceId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
 
-    return await ctx.db
+    if (args.workspaceId) {
+      await requireMembership(ctx, args.workspaceId, identity.subject);
+      return await ctx.db
+        .query("tasks")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+        .collect();
+    }
+
+    const personal = await ctx.db
       .query("tasks")
       .withIndex("by_user", (q) => q.eq("userId", identity.subject))
       .collect();
+
+    return personal.filter((task) => !task.workspaceId);
   },
 });
 
@@ -28,10 +39,15 @@ export const create = mutation({
       done: v.boolean(),
     }))),
     notes: v.optional(v.string()),
+    workspaceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
+
+    if (args.workspaceId) {
+      await requireEditor(ctx, args.workspaceId, identity.subject);
+    }
 
     const taskId = await ctx.db.insert("tasks", {
       userId: identity.subject,
@@ -44,6 +60,7 @@ export const create = mutation({
       tags: args.tags,
       subtasks: args.subtasks ?? [],
       notes: args.notes ?? "",
+      workspaceId: args.workspaceId,
     });
 
     await ctx.db.insert("activityLog", {
@@ -79,7 +96,13 @@ export const update = mutation({
     if (!identity) throw new Error("Not authenticated");
 
     const task = await ctx.db.get(args.id);
-    if (!task || task.userId !== identity.subject) throw new Error("Not authorized");
+    if (!task) throw new Error("Task not found");
+
+    if (task.workspaceId) {
+      await requireEditor(ctx, task.workspaceId, identity.subject);
+    } else if (task.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
 
     const { id, ...updates } = args;
     const patchData: Record<string, unknown> = {};
@@ -116,7 +139,13 @@ export const remove = mutation({
     if (!identity) throw new Error("Not authenticated");
 
     const task = await ctx.db.get(args.id);
-    if (!task || task.userId !== identity.subject) throw new Error("Not authorized");
+    if (!task) throw new Error("Task not found");
+
+    if (task.workspaceId) {
+      await requireEditor(ctx, task.workspaceId, identity.subject);
+    } else if (task.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
 
     await ctx.db.insert("activityLog", {
       userId: identity.subject,

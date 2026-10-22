@@ -17,7 +17,8 @@ export default defineSchema({
     order: v.number(),
     workspaceId: v.optional(v.string()),
   }).index("by_user", ["userId"])
-    .index("by_user_workspace", ["userId", "workspaceId"]),
+    .index("by_user_workspace", ["userId", "workspaceId"])
+    .index("by_workspace", ["workspaceId"]),
 
   tasks: defineTable({
     userId: v.string(),
@@ -38,7 +39,8 @@ export default defineSchema({
     workspaceId: v.optional(v.string()),
   }).index("by_user", ["userId"])
     .index("by_user_done", ["userId", "done"])
-    .index("by_user_project", ["userId", "projectId"]),
+    .index("by_user_project", ["userId", "projectId"])
+    .index("by_workspace", ["workspaceId"]),
 
   journal: defineTable({
     userId: v.string(),
