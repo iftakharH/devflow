@@ -118,7 +118,11 @@ automatically.
 Set the Convex-side variable once:
 
 ```bash
+# Development deployment
 npx convex env set CLERK_FRONTEND_API_URL https://your-instance.clerk.accounts.dev
+
+# Production deployment
+npx convex env set CLERK_FRONTEND_API_URL https://your-instance.clerk.accounts.dev --prod
 ```
 
 ### 3. Configure Clerk
